@@ -250,7 +250,7 @@ export default function CreateCertificate() {
         formData.cid
       ).send({ 
         from: account,
-        gas: Math.floor(gasEstimate * 1.2)
+        gas: Math.floor(Number(gasEstimate) * 1.2)
       });
 
       console.log("✅ Transacción exitosa:", transaction);
