@@ -1,0 +1,21 @@
+{
+  "name": "certificate-sonic",
+  "private": true,
+  "scripts": {
+    "build": "remix build",
+    "dev": "remix dev",
+    "start": "remix-serve build",
+    "deploy": "cd contracts && npm run deploy"
+  },
+  "dependencies": {
+    "@remix-run/node": "^1.19.3",
+    "@remix-run/react": "^1.19.3",
+    "@remix-run/serve": "^1.19.3",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "web3": "^4.2.0"
+  },
+  "devDependencies": {
+    "@remix-run/dev": "^1.19.3"
+  }
+}
