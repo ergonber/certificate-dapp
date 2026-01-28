@@ -1,5 +1,5 @@
 export const CONTRACT_CONFIG = {
-  ADDRESS: "0x8c9788968105bc28AB6489E8E85ABE3AA3573965", // Actualizar después del deployment
+  ADDRESS: "0xAe48Ed8cD53e6e595E857872b1ac338E17F08549", // Actualizar después del deployment
   SONIC_RPC_URL: "https://rpc.testnet.soniclabs.com",
   CHAIN_ID: 14601,
   EXPLORER_URL: "https://testnet.soniclabs.com"
