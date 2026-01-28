@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import Web3 from 'web3';
 
 export default function CreateCertificate() {
   const [formData, setFormData] = useState({
@@ -16,12 +15,12 @@ export default function CreateCertificate() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [certificateId, setCertificateId] = useState(null);
 
-  // CONFIGURACIÓN SONIC
-  const CONTRACT_ADDRESS = "0x8c9788968105bc28AB6489E8E85ABE3AA3573965"; // Actualizar después del deployment
+  // CONFIGURACIÓN SONIC - ACTUALIZAR CON TU DIRECCIÓN DE CONTRATO
+  const CONTRACT_ADDRESS = "0x8c9788968105bc28AB6489E8E85ABE3AA3573965"; // REEMPLAZAR CON DIRECCIÓN REAL
   const SONIC_RPC_URL = "https://rpc.testnet.soniclabs.com";
   const SONIC_CHAIN_ID = 14601;
 
-  // ABI del contrato simplificado
+  // ABI simplificado del contrato CertificateRegistry
   const CONTRACT_ABI = [
     {
       "inputs": [
@@ -53,31 +52,16 @@ export default function CreateCertificate() {
       "type": "function"
     },
     {
-      "inputs": [{"internalType": "string","name": "_cid","type": "string"}],
-      "name": "verifyCertificate",
-      "outputs": [{"internalType": "bool","name": "","type": "bool"}],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
       "inputs": [],
       "name": "certificateCount",
       "outputs": [{"internalType": "uint256","name": "","type": "uint256"}],
       "stateMutability": "view",
       "type": "function"
-    },
-    {
-      "inputs": [],
-      "name": "owner",
-      "outputs": [{"internalType": "address","name": "","type": "address"}],
-      "stateMutability": "view",
-      "type": "function"
     }
   ];
 
-  // Configuración de Sonic para MetaMask
   const sonicTestnetConfig = {
-    chainId: '0x3909', // 14601 en hexadecimal
+    chainId: '0x3909',
     chainName: 'Sonic Testnet',
     nativeCurrency: {
       name: 'Sonic',
@@ -90,13 +74,14 @@ export default function CreateCertificate() {
 
   useEffect(() => {
     checkWalletConnection();
-    if (window.ethereum) {
+    
+    if (typeof window !== 'undefined' && window.ethereum) {
       window.ethereum.on('accountsChanged', handleAccountsChanged);
       window.ethereum.on('chainChanged', handleChainChanged);
     }
 
     return () => {
-      if (window.ethereum) {
+      if (typeof window !== 'undefined' && window.ethereum) {
         window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
         window.ethereum.removeListener('chainChanged', handleChainChanged);
       }
@@ -117,13 +102,14 @@ export default function CreateCertificate() {
   };
 
   const checkWalletConnection = async () => {
-    if (window.ethereum) {
+    if (typeof window !== 'undefined' && window.ethereum) {
       try {
         const accounts = await window.ethereum.request({ 
           method: 'eth_accounts' 
         });
         
         if (accounts.length > 0) {
+          const Web3 = (await import('web3')).default;
           const web3Instance = new Web3(window.ethereum);
           setWeb3(web3Instance);
           setAccount(accounts[0]);
@@ -135,8 +121,8 @@ export default function CreateCertificate() {
   };
 
   const connectWallet = async () => {
-    if (!window.ethereum) {
-      alert('Por favor instala MetaMask para usar esta aplicación');
+    if (typeof window === 'undefined' || !window.ethereum) {
+      alert('Por favor instala MetaMask o Rabby Wallet para usar esta aplicación');
       return;
     }
 
@@ -146,6 +132,7 @@ export default function CreateCertificate() {
         method: 'eth_requestAccounts' 
       });
 
+      const Web3 = (await import('web3')).default;
       const web3Instance = new Web3(window.ethereum);
       const currentChainId = await web3Instance.eth.getChainId();
 
@@ -180,7 +167,7 @@ export default function CreateCertificate() {
           });
         } catch (addError) {
           console.error('Error adding Sonic network:', addError);
-          throw new Error('No se pudo agregar Sonic Testnet a MetaMask');
+          throw new Error('No se pudo agregar Sonic Testnet');
         }
       } else {
         throw switchError;
@@ -204,7 +191,6 @@ export default function CreateCertificate() {
       return;
     }
 
-    // Validar campos
     if (!formData.fullName || !formData.courseTitle || !formData.date || !formData.grade || !formData.cid) {
       alert('Por favor completa todos los campos');
       return;
@@ -219,7 +205,6 @@ export default function CreateCertificate() {
       
       const contract = new web3.eth.Contract(CONTRACT_ABI, CONTRACT_ADDRESS);
       
-      // Convertir fecha a timestamp
       const dateTimestamp = Math.floor(new Date(formData.date).getTime() / 1000);
       
       console.log("📝 Datos a enviar:", {
@@ -230,91 +215,63 @@ export default function CreateCertificate() {
         cid: formData.cid
       });
 
+      // Obtener precio del gas
+      const gasPrice = await web3.eth.getGasPrice();
+      
       // Estimar gas
-  try {
-  // Obtener precio del gas de la red
-  const gasPrice = await web3.eth.getGasPrice();
-  
-  // Estimar gas con un buffer más conservador
-  const gasEstimate = await contract.methods.createCertificate(
-    formData.fullName,
-    formData.courseTitle,
-    dateTimestamp,
-    formData.grade,
-    formData.cid
-  ).estimateGas({ from: account });
-  
-  // Convertir BigInt a string explícitamente
-  const gasLimit = (BigInt(gasEstimate) * 120n / 100n).toString(); // +20% buffer
-  
-  console.log("💰 Gas Price:", gasPrice);
-  console.log("⛽ Gas Estimate:", gasEstimate.toString());
-  console.log("📊 Gas Limit con buffer:", gasLimit);
-  
-  // Enviar transacción con parámetros explícitos
-  const transaction = await contract.methods.createCertificate(
-    formData.fullName,
-    formData.courseTitle,
-    dateTimestamp,
-    formData.grade,
-    formData.cid
-  ).send({
-    from: account,
-    gas: gasLimit,
-    gasPrice: gasPrice,
-    maxFeePerGas: undefined, // Deja que MetaMask calcule esto
-    maxPriorityFeePerGas: undefined // Deja que MetaMask calcule esto
-  });
-  
-  console.log("✅ Transacción enviada:", transaction.transactionHash);
-  
-} catch (error) {
-  console.error("❌ Error detallado:", error);
-  throw error;
-}
-      console.log("✅ Transacción exitosa:", transaction);
-
-      // Obtener el ID del certificado del evento
-      const receipt = await web3.eth.getTransactionReceipt(transaction.transactionHash);
-      console.log("📄 Receipt:", receipt);
-
-      // Buscar el event CertificateCreated
-      if (receipt.logs && receipt.logs.length > 0) {
-        for (const log of receipt.logs) {
-          if (log.address.toLowerCase() === CONTRACT_ADDRESS.toLowerCase()) {
-            // Decodificar el evento (forma simplificada)
-            const eventSignature = web3.utils.keccak256("CertificateCreated(uint256,address,string,string,uint256,string,string)");
-            
-            if (log.topics[0] === eventSignature) {
-              // El primer topic después de la firma es el ID (indexado)
-              const idHex = log.topics[1];
-              const certificateId = web3.utils.hexToNumber(idHex);
-              setCertificateId(certificateId);
-              console.log("🎯 ID del certificado:", certificateId);
-              break;
-            }
-          }
-        }
-      }
-
-      // Si no encontramos el ID en eventos, intentar obtenerlo del contador
-      if (!certificateId) {
-        try {
-          const count = await contract.methods.certificateCount().call();
-          setCertificateId(Number(count));
-          console.log("📊 ID del certificado (del contador):", count);
-        } catch (error) {
-          console.log("⚠️ No se pudo obtener el ID del certificado");
-        }
+      const gasEstimate = await contract.methods.createCertificate(
+        formData.fullName,
+        formData.courseTitle,
+        dateTimestamp,
+        formData.grade,
+        formData.cid
+      ).estimateGas({ from: account });
+      
+      // Calcular gas limit con buffer
+      const gasLimit = (BigInt(gasEstimate) * 120n / 100n).toString();
+      
+      console.log("💰 Gas Price:", gasPrice);
+      console.log("⛽ Gas Estimate:", gasEstimate.toString());
+      console.log("📊 Gas Limit con buffer:", gasLimit);
+      
+      // Enviar transacción
+      const transaction = await contract.methods.createCertificate(
+        formData.fullName,
+        formData.courseTitle,
+        dateTimestamp,
+        formData.grade,
+        formData.cid
+      ).send({
+        from: account,
+        gas: gasLimit,
+        gasPrice: gasPrice
+      });
+      
+      console.log("✅ Transacción enviada:", transaction.transactionHash);
+      
+      // Obtener ID del certificado
+      let newCertificateId = null;
+      
+      try {
+        // Intentar obtener del contador del contrato
+        const count = await contract.methods.certificateCount().call();
+        newCertificateId = Number(count);
+        setCertificateId(newCertificateId);
+        console.log("🎯 ID del certificado (del contador):", newCertificateId);
+      } catch (error) {
+        console.log("⚠️ No se pudo obtener el ID automáticamente");
       }
 
       setTransactionStatus({
         success: true,
         message: '🎉 Certificado creado exitosamente en Sonic Blockchain!',
         transactionHash: transaction.transactionHash,
+        certificateId: newCertificateId,
         blockNumber: transaction.blockNumber,
         explorerUrl: `https://testnet.soniclabs.com/tx/${transaction.transactionHash}`,
-        contractUrl: `https://testnet.soniclabs.com/address/${CONTRACT_ADDRESS}`
+        contractUrl: `https://testnet.soniclabs.com/address/${CONTRACT_ADDRESS}`,
+        studentName: formData.fullName,
+        courseName: formData.courseTitle
       });
 
       // Limpiar formulario
@@ -340,6 +297,8 @@ export default function CreateCertificate() {
         errorMessage = revertMatch ? `Error: ${revertMatch[1]}` : "El contrato rechazó la transacción";
       } else if (error.message.includes("already registered")) {
         errorMessage = "Este CID ya está registrado en la blockchain";
+      } else if (error.message.includes("internal accounts")) {
+        errorMessage = "Error de wallet. Intenta con Rabby Wallet o reinstala MetaMask";
       }
 
       setTransactionStatus({
@@ -350,10 +309,6 @@ export default function CreateCertificate() {
     }
 
     setLoading(false);
-  };
-
-  const formatDate = (timestamp) => {
-    return new Date(timestamp * 1000).toLocaleDateString('es-ES');
   };
 
   const isFormValid = () => {
@@ -383,7 +338,7 @@ export default function CreateCertificate() {
                   Conectando...
                 </>
               ) : (
-                '🔗 Conectar MetaMask'
+                '🔗 Conectar Wallet'
               )}
             </button>
           ) : (
@@ -404,10 +359,13 @@ export default function CreateCertificate() {
           <div className="not-connected">
             <div className="connection-prompt">
               <h2>🔗 Conecta tu Wallet</h2>
-              <p>Para registrar certificados en Sonic, necesitas conectar tu wallet de MetaMask</p>
+              <p>Para registrar certificados en Sonic, necesitas conectar tu wallet</p>
               <button onClick={connectWallet} className="connect-btn large">
-                🔗 Conectar MetaMask
+                🔗 Conectar Wallet
               </button>
+              <p className="wallet-hint">
+                Recomendado: <strong>Rabby Wallet</strong> para mejor compatibilidad con Sonic
+              </p>
             </div>
           </div>
         ) : (
@@ -522,15 +480,25 @@ export default function CreateCertificate() {
                 
                 {transactionStatus.success && (
                   <div className="transaction-details">
-                    {certificateId && (
+                    {transactionStatus.certificateId && (
                       <div className="detail-row">
                         <strong>🆔 ID del Certificado:</strong>
-                        <span className="certificate-id">#{certificateId}</span>
+                        <span className="certificate-id">#{transactionStatus.certificateId}</span>
                       </div>
                     )}
                     
                     <div className="detail-row">
-                      <strong>📫 Hash de Transacción:</strong>
+                      <strong>👤 Estudiante:</strong>
+                      <span>{transactionStatus.studentName}</span>
+                    </div>
+                    
+                    <div className="detail-row">
+                      <strong>📚 Curso:</strong>
+                      <span>{transactionStatus.courseName}</span>
+                    </div>
+                    
+                    <div className="detail-row">
+                      <strong>📫 Transacción:</strong>
                       <a 
                         href={transactionStatus.explorerUrl} 
                         target="_blank" 
@@ -541,15 +509,12 @@ export default function CreateCertificate() {
                       </a>
                     </div>
                     
-                    <div className="detail-row">
-                      <strong>📦 Block Number:</strong>
-                      <span>{transactionStatus.blockNumber}</span>
-                    </div>
-                    
-                    <div className="detail-row">
-                      <strong>👤 Emisor:</strong>
-                      <code>{account.slice(0, 10)}...{account.slice(-8)}</code>
-                    </div>
+                    {transactionStatus.blockNumber && (
+                      <div className="detail-row">
+                        <strong>📦 Block Number:</strong>
+                        <span>{transactionStatus.blockNumber}</span>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -559,32 +524,21 @@ export default function CreateCertificate() {
               <h3>💡 Información Importante</h3>
               <div className="info-grid">
                 <div className="info-card">
-                  <h4>📝 Datos Requeridos</h4>
+                  <h4>✅ Estado Actual</h4>
                   <ul>
-                    <li>Nombre completo del estudiante</li>
-                    <li>Nombre del curso o título</li>
-                    <li>Fecha del certificado</li>
-                    <li>Nota o calificación</li>
-                    <li>CID del documento (IPFS/Arweave)</li>
+                    <li>✅ Transacciones funcionan con Rabby</li>
+                    <li>✅ Conexión con Sonic Testnet estable</li>
+                    <li>⚠️ MetaMask puede tener problemas</li>
+                    <li>✅ Contrato desplegado y operativo</li>
                   </ul>
                 </div>
                 
                 <div className="info-card">
-                  <h4>🔗 CID del Documento</h4>
-                  <p>El CID es el hash único de tu documento subido a:</p>
+                  <h4>🔗 Wallet Recomendado</h4>
+                  <p>Para mejor compatibilidad con Sonic:</p>
                   <ul>
-                    <li><a href="https://web3.storage" target="_blank">Web3.Storage</a> (IPFS)</li>
-                    <li><a href="https://www.arweave.org" target="_blank">Arweave</a></li>
-                    <li><a href="https://pinata.cloud" target="_blank">Pinata</a> (IPFS)</li>
-                  </ul>
-                </div>
-                
-                <div className="info-card">
-                  <h4>💰 Costos</h4>
-                  <ul>
-                    <li>Gas fee: Variable (Sonic Testnet)</li>
-                    <li>No hay costos de plataforma</li>
-                    <li>Necesitas S (Sonic) para gas</li>
+                    <li><strong>Rabby Wallet</strong> (funciona mejor)</li>
+                    <li>MetaMask (puede requerir reinstalación)</li>
                   </ul>
                 </div>
               </div>
@@ -602,12 +556,12 @@ export default function CreateCertificate() {
               <strong>ChainID:</strong> 14601
             </div>
             <div className="info-item">
-              <strong>Contrato:</strong> 
-              <code>{CONTRACT_ADDRESS.slice(0, 10)}...{CONTRACT_ADDRESS.slice(-8)}</code>
+              <strong>Wallet:</strong> 
+              <span className="status connected">✅ Conectado</span>
             </div>
             <div className="info-item">
-              <strong>Red:</strong> 
-              <span className="status connected">✅ Conectado a Sonic</span>
+              <strong>Contrato:</strong> 
+              <code>{CONTRACT_ADDRESS.slice(0, 10)}...{CONTRACT_ADDRESS.slice(-8)}</code>
             </div>
           </div>
         </div>
@@ -697,6 +651,12 @@ export default function CreateCertificate() {
         }
         
         .network-info {
+          font-size: 0.9rem;
+          opacity: 0.8;
+        }
+        
+        .wallet-hint {
+          margin-top: 15px;
           font-size: 0.9rem;
           opacity: 0.8;
         }
