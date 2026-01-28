@@ -3,5 +3,5 @@
   "devCommand": "npm run dev",
   "installCommand": "npm install",
   "framework": "remix",
-  "outputDirectory": "build"
+  "ignoreCommand": "ls contracts/ 2>/dev/null || true"
 }
