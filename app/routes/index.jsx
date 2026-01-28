@@ -52,21 +52,18 @@ export default function CreateCertificate() {
   };
 
   useEffect(() => {
-    const checkWallet = async () => {
-      const provider = window.ethereum;
-      if (provider && provider.isRabby) {
-        try {
-          const accounts = await provider.request({ method: 'eth_accounts' });
-          if (accounts.length > 0) {
-            setAccount(accounts[0]);
-          }
-        } catch (error) {
-          console.log('No Rabby wallet connected');
-        }
+  // Limpiar cualquier conflicto de wallets
+  if (typeof window !== 'undefined') {
+    // Intentar detectar y resolver conflictos
+    if (window.ethereum && window.ethereum.providers) {
+      // Si hay múltiples providers, usar el de Rabby
+      const rabbyProvider = window.ethereum.providers.find(p => p.isRabby);
+      if (rabbyProvider) {
+        window.ethereum = rabbyProvider;
       }
-    };
-    checkWallet();
-  }, []);
+    }
+  }
+}, []);
 
   const connectWallet = async () => {
     const provider = window.ethereum;
