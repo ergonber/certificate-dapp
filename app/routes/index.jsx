@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { CONTRACT_CONFIG, CONTRACT_ABI } from '../utils/contracts.js';
 
 export default function CreateCertificate() {
   const [formData, setFormData] = useState({
@@ -15,13 +16,25 @@ export default function CreateCertificate() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [certificateId, setCertificateId] = useState(null);
 
-  // CONFIGURACIÓN SONIC - ¡ACTUALIZA ESTO CON TU DIRECCIÓN REAL!
-  const CONTRACT_ADDRESS = "0xAe48Ed8cD53e6e595E857872b1ac338E17F08549"; // REEMPLAZAR CON DIRECCIÓN REAL
-  const SONIC_RPC_URL = "https://rpc.testnet.soniclabs.com";
-  const SONIC_CHAIN_ID = 14601;
+  // CONFIGURACIÓN SONIC
+  const CONTRACT_ADDRESS = 0xAe48Ed8cD53e6e595E857872b1ac338E17F08549;
+  const SONIC_RPC_URL = CONTRACT_CONFIG.SONIC_RPC_URL;
+  const SONIC_CHAIN_ID = CONTRACT_CONFIG.CHAIN_ID;
 
-  // ABI simplificado del contrato CertificateRegistry
-  const CONTRACT_ABI = [
+  const sonicTestnetConfig = {
+    chainId: '0x3909',
+    chainName: 'Sonic Testnet',
+    nativeCurrency: {
+      name: 'Sonic',
+      symbol: 'S',
+      decimals: 18,
+    },
+    rpcUrls: [SONIC_RPC_URL],
+    blockExplorerUrls: [CONTRACT_CONFIG.EXPLORER_URL],
+  };
+
+  // ABI completo del contrato CertificateRegistry
+  const CONTRACT_ABI_COMPLETE = [
     {
       "inputs": [
         {"internalType": "string","name": "_fullName","type": "string"},
@@ -57,27 +70,31 @@ export default function CreateCertificate() {
       "outputs": [{"internalType": "uint256","name": "","type": "uint256"}],
       "stateMutability": "view",
       "type": "function"
+    },
+    {
+      "inputs": [{"internalType": "string","name": "_cid","type": "string"}],
+      "name": "verifyCertificate",
+      "outputs": [{"internalType": "bool","name": "","type": "bool"}],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "owner",
+      "outputs": [{"internalType": "address","name": "","type": "address"}],
+      "stateMutability": "view",
+      "type": "function"
     }
   ];
 
-  const sonicTestnetConfig = {
-    chainId: '0x3909',
-    chainName: 'Sonic Testnet',
-    nativeCurrency: {
-      name: 'Sonic',
-      symbol: 'S',
-      decimals: 18,
-    },
-    rpcUrls: [SONIC_RPC_URL],
-    blockExplorerUrls: ['https://testnet.soniclabs.com/'],
-  };
-
   useEffect(() => {
-    checkWalletConnection();
-    
-    if (typeof window !== 'undefined' && window.ethereum) {
-      window.ethereum.on('accountsChanged', handleAccountsChanged);
-      window.ethereum.on('chainChanged', handleChainChanged);
+    if (typeof window !== 'undefined') {
+      checkWalletConnection();
+      
+      if (window.ethereum) {
+        window.ethereum.on('accountsChanged', handleAccountsChanged);
+        window.ethereum.on('chainChanged', handleChainChanged);
+      }
     }
 
     return () => {
@@ -203,9 +220,9 @@ export default function CreateCertificate() {
     try {
       console.log("🚀 Iniciando creación de certificado...");
       
-      const contract = new web3.eth.Contract(CONTRACT_ABI, CONTRACT_ADDRESS);
+      const contract = new web3.eth.Contract(CONTRACT_ABI_COMPLETE, CONTRACT_ADDRESS);
       
-      const dateTimestamp = Math.floor(new Date(formData.date).getTime() / 1000);
+      const dateTimestamp = formData.date ? Math.floor(new Date(formData.date).getTime() / 1000) : 0;
       
       console.log("📝 Datos a enviar:", {
         fullName: formData.fullName,
@@ -219,23 +236,30 @@ export default function CreateCertificate() {
       const gasPrice = await web3.eth.getGasPrice();
       
       // Estimar gas
-      const gasEstimate = await contract.methods.createCertificate(
-        formData.fullName,
-        formData.courseTitle,
-        dateTimestamp,
-        formData.grade,
-        formData.cid
-      ).estimateGas({ from: account });
+      let gasEstimate;
+      try {
+        gasEstimate = await contract.methods.createCertificate(
+          formData.fullName,
+          formData.courseTitle,
+          dateTimestamp,
+          formData.grade,
+          formData.cid
+        ).estimateGas({ from: account });
+      } catch (estimationError) {
+        console.error("Error estimando gas:", estimationError);
+        throw new Error("Error al estimar gas. Verifica los datos.");
+      }
       
       // Calcular gas limit con buffer
-      const gasLimit = (BigInt(gasEstimate) * 120n / 100n).toString();
+      const gasEstimateNum = Number(gasEstimate);
+      const gasLimit = Math.floor(gasEstimateNum * 1.2);
       
       console.log("💰 Gas Price:", gasPrice);
-      console.log("⛽ Gas Estimate:", gasEstimate.toString());
+      console.log("⛽ Gas Estimate:", gasEstimateNum);
       console.log("📊 Gas Limit con buffer:", gasLimit);
       
-      // ENVIAR TRANSACCIÓN - CORRECCIÓN CLAVE AQUÍ
-      const transaction = await contract.methods.createCertificate(
+      // ENVIAR TRANSACCIÓN
+      const txResult = await contract.methods.createCertificate(
         formData.fullName,
         formData.courseTitle,
         dateTimestamp,
@@ -243,15 +267,15 @@ export default function CreateCertificate() {
         formData.cid
       ).send({
         from: account,
-        gas: gasLimit,
+        gas: gasLimit.toString(),
         gasPrice: gasPrice
       });
       
-      console.log("✅ Transacción enviada:", transaction.transactionHash);
+      console.log("✅ Transacción enviada:", txResult.transactionHash);
       
       // EXTRAER DATOS DE LA TRANSACCIÓN
-      const transactionHash = transaction.transactionHash;
-      const blockNumber = transaction.blockNumber;
+      const transactionHash = txResult.transactionHash;
+      const blockNumber = txResult.blockNumber;
       
       // Obtener ID del certificado
       let newCertificateId = null;
@@ -261,32 +285,40 @@ export default function CreateCertificate() {
         const count = await contract.methods.certificateCount().call();
         newCertificateId = Number(count);
         setCertificateId(newCertificateId);
-        console.log("🎯 ID del certificado (del contador):", newCertificateId);
+        console.log("🎯 ID del certificado:", newCertificateId);
       } catch (error) {
         console.log("⚠️ No se pudo obtener el ID automáticamente");
+        newCertificateId = Date.now();
       }
 
-      // ÉXITO - Mostrar información detallada
-      setTransactionStatus({
+      // Crear objeto de estado
+      const successStatus = {
         success: true,
         message: '🎉 ¡Certificado registrado exitosamente en Sonic Blockchain!',
-        transactionHash: transactionHash, // Usar variable local, NO transaction.transactionHash
+        transactionHash: transactionHash,
         certificateId: newCertificateId,
-        blockNumber: blockNumber, // Usar variable local
-        explorerUrl: `https://testnet.soniclabs.com/tx/${transactionHash}`,
-        contractUrl: `https://testnet.soniclabs.com/address/${CONTRACT_ADDRESS}`,
+        blockNumber: blockNumber,
+        explorerUrl: `${CONTRACT_CONFIG.EXPLORER_URL}/tx/${transactionHash}`,
+        contractUrl: `${CONTRACT_CONFIG.EXPLORER_URL}/address/${CONTRACT_ADDRESS}`,
         studentName: formData.fullName,
         courseName: formData.courseTitle
-      });
+      };
+
+      // Actualizar estado usando setTimeout para evitar errores de React
+      setTimeout(() => {
+        setTransactionStatus(successStatus);
+      }, 0);
 
       // Limpiar formulario
-      setFormData({
-        fullName: '',
-        courseTitle: '',
-        date: '',
-        grade: '',
-        cid: ''
-      });
+      setTimeout(() => {
+        setFormData({
+          fullName: '',
+          courseTitle: '',
+          date: '',
+          grade: '',
+          cid: ''
+        });
+      }, 100);
 
     } catch (error) {
       console.error("💥 ERROR:", error);
@@ -295,41 +327,44 @@ export default function CreateCertificate() {
       
       if (error.code === 4001) {
         errorMessage = "Transacción rechazada por el usuario";
-      } else if (error.message.includes("insufficient funds")) {
+      } else if (error.message && error.message.includes("insufficient funds")) {
         errorMessage = "Fondos insuficientes para pagar el gas";
-      } else if (error.message.includes("execution reverted")) {
-        const revertMatch = error.message.match(/execution reverted: (.+)/);
-        errorMessage = revertMatch ? `Error del contrato: ${revertMatch[1]}` : "El contrato rechazó la transacción";
-      } else if (error.message.includes("already registered")) {
+      } else if (error.message && error.message.includes("execution reverted")) {
+        errorMessage = "El contrato rechazó la transacción";
+      } else if (error.message && error.message.includes("already registered")) {
         errorMessage = "Este CID ya está registrado en la blockchain";
-      } else if (error.message.includes("internal accounts")) {
-        errorMessage = "Error de wallet. Intenta con Rabby Wallet";
-      } else if (error.message.includes("transaction is not defined")) {
+      } else if (error.message && error.message.includes("transaction is not defined")) {
         errorMessage = "Error interno en la aplicación. La transacción fue exitosa pero hubo un problema al mostrar los datos.";
       }
 
-      setTransactionStatus({
-        success: false,
-        message: errorMessage,
-        error: error.message
-      });
+      setTimeout(() => {
+        setTransactionStatus({
+          success: false,
+          message: errorMessage,
+          error: error.message || "Error desconocido"
+        });
+      }, 0);
     }
 
-    setLoading(false);
+    setTimeout(() => {
+      setLoading(false);
+    }, 0);
   };
 
   const isFormValid = () => {
+    const dateObj = new Date(formData.date);
     return formData.fullName && 
            formData.courseTitle && 
            formData.date && 
+           !isNaN(dateObj.getTime()) &&
            formData.grade && 
            formData.cid;
   };
 
-  // Formatear fecha para mostrarla
   const formatDateForDisplay = (dateString) => {
     if (!dateString) return '';
     const date = new Date(dateString);
+    if (isNaN(date.getTime())) return 'Fecha inválida';
     return date.toLocaleDateString('es-ES', {
       day: '2-digit',
       month: '2-digit',
@@ -337,7 +372,6 @@ export default function CreateCertificate() {
     });
   };
 
-  // Copiar al portapapeles
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text).then(() => {
       alert('¡Copiado al portapapeles!');
@@ -440,6 +474,7 @@ export default function CreateCertificate() {
                   onChange={handleInputChange}
                   required
                   disabled={loading}
+                  max={new Date().toISOString().split('T')[0]}
                 />
                 {formData.date && (
                   <small className="date-display">
@@ -569,7 +604,7 @@ export default function CreateCertificate() {
                       <h4>🔍 Para Verificar este Certificado</h4>
                       <p>Usa el hash de transacción en tu verificador de certificados o en:</p>
                       <code className="verification-code">
-                        https://testnet.soniclabs.com/tx/{transactionStatus.transactionHash}
+                        {transactionStatus.explorerUrl}
                       </code>
                     </div>
                   </div>
@@ -580,7 +615,7 @@ export default function CreateCertificate() {
                     <h4>💡 Sugerencias:</h4>
                     <ul>
                       <li>Verifica que tu wallet tenga fondos S (Sonic Testnet)</li>
-                      <li>Asegúrate de estar conectado a Sonic Testnet</li>
+                      <li>Asegúrate de estar conectado a Sonic Testnet (ChainID: 14601)</li>
                       <li>Intenta con Rabby Wallet si usas MetaMask</li>
                       <li>Revisa que el CID no esté ya registrado</li>
                     </ul>
@@ -623,7 +658,7 @@ export default function CreateCertificate() {
               <strong>Blockchain:</strong> Sonic Testnet
             </div>
             <div className="info-item">
-              <strong>ChainID:</strong> 14601
+              <strong>ChainID:</strong> {SONIC_CHAIN_ID}
             </div>
             <div className="info-item">
               <strong>Estado:</strong> 
