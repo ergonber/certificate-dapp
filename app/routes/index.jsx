@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { CONTRACT_CONFIG, CONTRACT_ABI } from '../utils/contracts.js';
+import { CONTRACT_CONFIG, CONTRACT_ABI } from '../../../utils/contracts.js';
 
 export default function CreateCertificate() {
   const [formData, setFormData] = useState({
