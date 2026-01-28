@@ -231,28 +231,47 @@ export default function CreateCertificate() {
       });
 
       // Estimar gas
-      const gasEstimate = await contract.methods.createCertificate(
-        formData.fullName,
-        formData.courseTitle,
-        dateTimestamp,
-        formData.grade,
-        formData.cid
-      ).estimateGas({ from: account });
-
-      console.log("⛽ Gas estimado:", gasEstimate);
-
-      // Enviar transacción
-      const transaction = await contract.methods.createCertificate(
-        formData.fullName,
-        formData.courseTitle,
-        dateTimestamp,
-        formData.grade,
-        formData.cid
-      ).send({ 
-        from: account,
-        gas: Math.floor(Number(gasEstimate) * 1.2)
-      });
-
+  try {
+  // Obtener precio del gas de la red
+  const gasPrice = await web3.eth.getGasPrice();
+  
+  // Estimar gas con un buffer más conservador
+  const gasEstimate = await contract.methods.createCertificate(
+    formData.fullName,
+    formData.courseTitle,
+    dateTimestamp,
+    formData.grade,
+    formData.cid
+  ).estimateGas({ from: account });
+  
+  // Convertir BigInt a string explícitamente
+  const gasLimit = (BigInt(gasEstimate) * 120n / 100n).toString(); // +20% buffer
+  
+  console.log("💰 Gas Price:", gasPrice);
+  console.log("⛽ Gas Estimate:", gasEstimate.toString());
+  console.log("📊 Gas Limit con buffer:", gasLimit);
+  
+  // Enviar transacción con parámetros explícitos
+  const transaction = await contract.methods.createCertificate(
+    formData.fullName,
+    formData.courseTitle,
+    dateTimestamp,
+    formData.grade,
+    formData.cid
+  ).send({
+    from: account,
+    gas: gasLimit,
+    gasPrice: gasPrice,
+    maxFeePerGas: undefined, // Deja que MetaMask calcule esto
+    maxPriorityFeePerGas: undefined // Deja que MetaMask calcule esto
+  });
+  
+  console.log("✅ Transacción enviada:", transaction.transactionHash);
+  
+} catch (error) {
+  console.error("❌ Error detallado:", error);
+  throw error;
+}
       console.log("✅ Transacción exitosa:", transaction);
 
       // Obtener el ID del certificado del evento
