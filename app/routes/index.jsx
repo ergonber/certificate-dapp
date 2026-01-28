@@ -15,8 +15,8 @@ export default function CreateCertificate() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [certificateId, setCertificateId] = useState(null);
 
-  // CONFIGURACIÓN SONIC - ACTUALIZAR CON TU DIRECCIÓN DE CONTRATO
-  const CONTRACT_ADDRESS = "0x8c9788968105bc28AB6489E8E85ABE3AA3573965"; // REEMPLAZAR CON DIRECCIÓN REAL
+  // CONFIGURACIÓN SONIC - ¡ACTUALIZA ESTO CON TU DIRECCIÓN REAL!
+  const CONTRACT_ADDRESS = "0xTU_CONTRATO_AQUI"; // REEMPLAZAR CON DIRECCIÓN REAL
   const SONIC_RPC_URL = "https://rpc.testnet.soniclabs.com";
   const SONIC_CHAIN_ID = 14601;
 
@@ -234,7 +234,7 @@ export default function CreateCertificate() {
       console.log("⛽ Gas Estimate:", gasEstimate.toString());
       console.log("📊 Gas Limit con buffer:", gasLimit);
       
-      // Enviar transacción
+      // ENVIAR TRANSACCIÓN - CORRECCIÓN CLAVE AQUÍ
       const transaction = await contract.methods.createCertificate(
         formData.fullName,
         formData.courseTitle,
@@ -249,6 +249,10 @@ export default function CreateCertificate() {
       
       console.log("✅ Transacción enviada:", transaction.transactionHash);
       
+      // EXTRAER DATOS DE LA TRANSACCIÓN
+      const transactionHash = transaction.transactionHash;
+      const blockNumber = transaction.blockNumber;
+      
       // Obtener ID del certificado
       let newCertificateId = null;
       
@@ -262,13 +266,14 @@ export default function CreateCertificate() {
         console.log("⚠️ No se pudo obtener el ID automáticamente");
       }
 
+      // ÉXITO - Mostrar información detallada
       setTransactionStatus({
         success: true,
-        message: '🎉 Certificado creado exitosamente en Sonic Blockchain!',
-        transactionHash: transaction.transactionHash,
+        message: '🎉 ¡Certificado registrado exitosamente en Sonic Blockchain!',
+        transactionHash: transactionHash, // Usar variable local, NO transaction.transactionHash
         certificateId: newCertificateId,
-        blockNumber: transaction.blockNumber,
-        explorerUrl: `https://testnet.soniclabs.com/tx/${transaction.transactionHash}`,
+        blockNumber: blockNumber, // Usar variable local
+        explorerUrl: `https://testnet.soniclabs.com/tx/${transactionHash}`,
         contractUrl: `https://testnet.soniclabs.com/address/${CONTRACT_ADDRESS}`,
         studentName: formData.fullName,
         courseName: formData.courseTitle
@@ -294,11 +299,13 @@ export default function CreateCertificate() {
         errorMessage = "Fondos insuficientes para pagar el gas";
       } else if (error.message.includes("execution reverted")) {
         const revertMatch = error.message.match(/execution reverted: (.+)/);
-        errorMessage = revertMatch ? `Error: ${revertMatch[1]}` : "El contrato rechazó la transacción";
+        errorMessage = revertMatch ? `Error del contrato: ${revertMatch[1]}` : "El contrato rechazó la transacción";
       } else if (error.message.includes("already registered")) {
         errorMessage = "Este CID ya está registrado en la blockchain";
       } else if (error.message.includes("internal accounts")) {
-        errorMessage = "Error de wallet. Intenta con Rabby Wallet o reinstala MetaMask";
+        errorMessage = "Error de wallet. Intenta con Rabby Wallet";
+      } else if (error.message.includes("transaction is not defined")) {
+        errorMessage = "Error interno en la aplicación. La transacción fue exitosa pero hubo un problema al mostrar los datos.";
       }
 
       setTransactionStatus({
@@ -317,6 +324,24 @@ export default function CreateCertificate() {
            formData.date && 
            formData.grade && 
            formData.cid;
+  };
+
+  // Formatear fecha para mostrarla
+  const formatDateForDisplay = (dateString) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('es-ES', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
+  };
+
+  // Copiar al portapapeles
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text).then(() => {
+      alert('¡Copiado al portapapeles!');
+    });
   };
 
   return (
@@ -416,6 +441,11 @@ export default function CreateCertificate() {
                   required
                   disabled={loading}
                 />
+                {formData.date && (
+                  <small className="date-display">
+                    📅 Se registrará como: {formatDateForDisplay(formData.date)}
+                  </small>
+                )}
               </div>
 
               <div className="form-group">
@@ -473,72 +503,112 @@ export default function CreateCertificate() {
               <div className={`transaction-result ${transactionStatus.success ? 'success' : 'error'}`}>
                 <div className="result-header">
                   <h3>
-                    {transactionStatus.success ? '✅ Éxito' : '❌ Error'}
+                    {transactionStatus.success ? '✅ ¡Certificado Registrado!' : '❌ Error'}
                   </h3>
                   <p>{transactionStatus.message}</p>
                 </div>
                 
                 {transactionStatus.success && (
                   <div className="transaction-details">
-                    {transactionStatus.certificateId && (
-                      <div className="detail-row">
-                        <strong>🆔 ID del Certificado:</strong>
-                        <span className="certificate-id">#{transactionStatus.certificateId}</span>
+                    <div className="success-message">
+                      <p>🎉 ¡Felicidades! Tu certificado ahora es inmutable en la blockchain de Sonic.</p>
+                      <p>🔗 <strong>Guarda este hash para verificar:</strong></p>
+                    </div>
+                    
+                    <div className="hash-section">
+                      <div className="hash-display">
+                        <strong>🔗 Hash de Transacción (Sonic):</strong>
+                        <div className="hash-container">
+                          <code className="sonic-hash">{transactionStatus.transactionHash}</code>
+                          <button 
+                            onClick={() => copyToClipboard(transactionStatus.transactionHash)}
+                            className="copy-btn"
+                          >
+                            📋 Copiar
+                          </button>
+                        </div>
                       </div>
-                    )}
-                    
-                    <div className="detail-row">
-                      <strong>👤 Estudiante:</strong>
-                      <span>{transactionStatus.studentName}</span>
-                    </div>
-                    
-                    <div className="detail-row">
-                      <strong>📚 Curso:</strong>
-                      <span>{transactionStatus.courseName}</span>
-                    </div>
-                    
-                    <div className="detail-row">
-                      <strong>📫 Transacción:</strong>
+                      
                       <a 
                         href={transactionStatus.explorerUrl} 
                         target="_blank" 
                         rel="noopener noreferrer"
                         className="explorer-link"
                       >
-                        Ver en Sonic Explorer →
+                        🔍 Ver en Sonic Explorer →
                       </a>
                     </div>
                     
-                    {transactionStatus.blockNumber && (
-                      <div className="detail-row">
-                        <strong>📦 Block Number:</strong>
-                        <span>{transactionStatus.blockNumber}</span>
+                    <div className="certificate-info">
+                      <h4>📋 Información del Certificado</h4>
+                      <div className="info-grid">
+                        <div className="info-item">
+                          <strong>👤 Estudiante:</strong>
+                          <span>{transactionStatus.studentName}</span>
+                        </div>
+                        <div className="info-item">
+                          <strong>📚 Curso:</strong>
+                          <span>{transactionStatus.courseName}</span>
+                        </div>
+                        {transactionStatus.certificateId && (
+                          <div className="info-item">
+                            <strong>🆔 ID del Certificado:</strong>
+                            <span className="certificate-id">#{transactionStatus.certificateId}</span>
+                          </div>
+                        )}
+                        {transactionStatus.blockNumber && (
+                          <div className="info-item">
+                            <strong>📦 Block Number:</strong>
+                            <span>{transactionStatus.blockNumber}</span>
+                          </div>
+                        )}
                       </div>
-                    )}
+                    </div>
+                    
+                    <div className="verification-note">
+                      <h4>🔍 Para Verificar este Certificado</h4>
+                      <p>Usa el hash de transacción en tu verificador de certificados o en:</p>
+                      <code className="verification-code">
+                        https://testnet.soniclabs.com/tx/{transactionStatus.transactionHash}
+                      </code>
+                    </div>
+                  </div>
+                )}
+                
+                {!transactionStatus.success && (
+                  <div className="error-suggestions">
+                    <h4>💡 Sugerencias:</h4>
+                    <ul>
+                      <li>Verifica que tu wallet tenga fondos S (Sonic Testnet)</li>
+                      <li>Asegúrate de estar conectado a Sonic Testnet</li>
+                      <li>Intenta con Rabby Wallet si usas MetaMask</li>
+                      <li>Revisa que el CID no esté ya registrado</li>
+                    </ul>
                   </div>
                 )}
               </div>
             )}
 
             <div className="info-section">
-              <h3>💡 Información Importante</h3>
+              <h3>💡 Cómo Funciona</h3>
               <div className="info-grid">
                 <div className="info-card">
-                  <h4>✅ Estado Actual</h4>
+                  <h4>✅ ¿Qué pasa después de registrar?</h4>
                   <ul>
-                    <li>✅ Transacciones funcionan con Rabby</li>
-                    <li>✅ Conexión con Sonic Testnet estable</li>
-                    <li>⚠️ MetaMask puede tener problemas</li>
-                    <li>✅ Contrato desplegado y operativo</li>
+                    <li>Recibirás un <strong>hash único de Sonic</strong></li>
+                    <li>El certificado será <strong>inmutable en blockchain</strong></li>
+                    <li>Podrás verificar el certificado en cualquier momento</li>
+                    <li>Los datos estarán disponibles permanentemente</li>
                   </ul>
                 </div>
                 
                 <div className="info-card">
-                  <h4>🔗 Wallet Recomendado</h4>
-                  <p>Para mejor compatibilidad con Sonic:</p>
+                  <h4>🔍 Cómo Verificar</h4>
+                  <p>Después del registro, usa el hash proporcionado en:</p>
                   <ul>
-                    <li><strong>Rabby Wallet</strong> (funciona mejor)</li>
-                    <li>MetaMask (puede requerir reinstalación)</li>
+                    <li>Tu propio verificador de certificados</li>
+                    <li>Explorer de Sonic Testnet</li>
+                    <li>Cualquier herramienta que se conecte a Sonic</li>
                   </ul>
                 </div>
               </div>
@@ -556,8 +626,10 @@ export default function CreateCertificate() {
               <strong>ChainID:</strong> 14601
             </div>
             <div className="info-item">
-              <strong>Wallet:</strong> 
-              <span className="status connected">✅ Conectado</span>
+              <strong>Estado:</strong> 
+              <span className={`status ${account ? 'connected' : 'disconnected'}`}>
+                {account ? '✅ Conectado' : '🔌 Desconectado'}
+              </span>
             </div>
             <div className="info-item">
               <strong>Contrato:</strong> 
@@ -716,6 +788,13 @@ export default function CreateCertificate() {
           cursor: not-allowed;
         }
         
+        .date-display {
+          margin-top: 5px;
+          color: #2c5530;
+          font-size: 0.9rem;
+          font-weight: 500;
+        }
+        
         .hint {
           margin-top: 5px;
           color: #6c757d;
@@ -760,81 +839,192 @@ export default function CreateCertificate() {
         
         .transaction-result {
           margin-top: 30px;
-          padding: 20px;
-          border-radius: 10px;
-          border-left: 4px solid;
+          padding: 25px;
+          border-radius: 12px;
+          border-left: 5px solid;
+          animation: fadeIn 0.5s ease;
         }
         
         .transaction-result.success {
-          background: #d4edda;
-          border-color: #28a745;
-          color: #155724;
+          background: #e8f5e9;
+          border-color: #2c5530;
+          color: #1e3a23;
         }
         
         .transaction-result.error {
-          background: #f8d7da;
-          border-color: #dc3545;
-          color: #721c24;
+          background: #ffebee;
+          border-color: #d32f2f;
+          color: #b71c1c;
         }
         
         .result-header h3 {
           margin: 0 0 10px 0;
+          font-size: 1.5rem;
         }
         
-        .transaction-details {
-          background: rgba(255, 255, 255, 0.5);
+        .success-message {
+          background: rgba(44, 85, 48, 0.1);
           padding: 15px;
           border-radius: 8px;
+          margin-bottom: 20px;
+        }
+        
+        .success-message p {
+          margin: 8px 0;
+        }
+        
+        .hash-section {
+          background: white;
+          padding: 20px;
+          border-radius: 10px;
+          border: 2px solid #e0e0e0;
+          margin: 20px 0;
+        }
+        
+        .hash-display {
+          margin-bottom: 15px;
+        }
+        
+        .hash-container {
+          display: flex;
+          align-items: center;
+          gap: 15px;
+          margin-top: 10px;
+          padding: 12px;
+          background: #f8f9fa;
+          border-radius: 8px;
+          border: 1px solid #e9ecef;
+        }
+        
+        .sonic-hash {
+          font-family: 'Courier New', monospace;
+          font-size: 0.9rem;
+          color: #2c5530;
+          word-break: break-all;
+          flex: 1;
+        }
+        
+        .copy-btn {
+          background: #2c5530;
+          color: white;
+          border: none;
+          padding: 8px 16px;
+          border-radius: 6px;
+          cursor: pointer;
+          font-weight: bold;
+          transition: all 0.3s;
+          white-space: nowrap;
+        }
+        
+        .copy-btn:hover {
+          background: #1e3a23;
+          transform: translateY(-2px);
+        }
+        
+        .explorer-link {
+          display: inline-block;
+          background: #2c5530;
+          color: white;
+          text-decoration: none;
+          font-weight: bold;
+          padding: 10px 20px;
+          border-radius: 8px;
+          transition: all 0.3s;
+          text-align: center;
+          width: 100%;
+          margin-top: 10px;
+        }
+        
+        .explorer-link:hover {
+          background: #1e3a23;
+          transform: translateY(-2px);
+          box-shadow: 0 4px 12px rgba(44, 85, 48, 0.3);
+        }
+        
+        .certificate-info {
+          background: #f8f9fa;
+          padding: 20px;
+          border-radius: 10px;
+          margin: 20px 0;
+        }
+        
+        .certificate-info h4 {
+          margin-top: 0;
+          color: #2c5530;
+        }
+        
+        .info-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          gap: 15px;
           margin-top: 15px;
         }
         
-        .detail-row {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 10px;
-          padding-bottom: 10px;
-          border-bottom: 1px solid rgba(0,0,0,0.1);
-        }
-        
-        .detail-row:last-child {
-          margin-bottom: 0;
-          border-bottom: none;
+        .info-item {
+          background: white;
+          padding: 12px;
+          border-radius: 8px;
+          border: 1px solid #e9ecef;
         }
         
         .certificate-id {
           background: #2c5530;
           color: white;
-          padding: 6px 12px;
-          border-radius: 20px;
+          padding: 4px 8px;
+          border-radius: 4px;
           font-weight: bold;
           font-family: 'Courier New', monospace;
         }
         
-        .explorer-link {
-          color: #2c5530;
-          text-decoration: none;
-          font-weight: bold;
-          padding: 6px 12px;
-          border: 2px solid #2c5530;
-          border-radius: 6px;
-          transition: all 0.3s;
+        .verification-note {
+          background: #e3f2fd;
+          padding: 20px;
+          border-radius: 10px;
+          border-left: 4px solid #1976d2;
+          margin-top: 20px;
         }
         
-        .explorer-link:hover {
-          background: #2c5530;
-          color: white;
+        .verification-note h4 {
+          margin-top: 0;
+          color: #1565c0;
+        }
+        
+        .verification-code {
+          display: block;
+          background: white;
+          padding: 10px;
+          border-radius: 6px;
+          font-family: 'Courier New', monospace;
+          font-size: 0.85rem;
+          margin-top: 10px;
+          word-break: break-all;
+          border: 1px solid #bbdefb;
+        }
+        
+        .error-suggestions {
+          background: #fff3e0;
+          padding: 20px;
+          border-radius: 10px;
+          margin-top: 20px;
+          border-left: 4px solid #f57c00;
+        }
+        
+        .error-suggestions h4 {
+          margin-top: 0;
+          color: #e65100;
+        }
+        
+        .error-suggestions ul {
+          padding-left: 20px;
+          margin: 10px 0;
+        }
+        
+        .error-suggestions li {
+          margin-bottom: 8px;
         }
         
         .info-section {
           margin-top: 40px;
-        }
-        
-        .info-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-          gap: 20px;
-          margin-top: 20px;
         }
         
         .info-card {
@@ -866,13 +1056,6 @@ export default function CreateCertificate() {
           margin-top: 30px;
         }
         
-        .info-item {
-          padding: 10px;
-          background: #f8f9fa;
-          border-radius: 8px;
-          border: 1px solid #e9ecef;
-        }
-        
         .status {
           padding: 4px 8px;
           border-radius: 4px;
@@ -885,9 +1068,19 @@ export default function CreateCertificate() {
           color: #155724;
         }
         
+        .status.disconnected {
+          background: #f8d7da;
+          color: #721c24;
+        }
+        
         @keyframes spin {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
+        }
+        
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
         }
         
         @media (max-width: 768px) {
@@ -907,10 +1100,13 @@ export default function CreateCertificate() {
             padding: 20px;
           }
           
-          .detail-row {
+          .hash-container {
             flex-direction: column;
-            align-items: flex-start;
-            gap: 5px;
+            align-items: stretch;
+          }
+          
+          .copy-btn {
+            width: 100%;
           }
           
           .info-grid {
