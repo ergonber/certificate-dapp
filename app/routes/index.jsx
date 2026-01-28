@@ -53,14 +53,15 @@ export default function CreateCertificate() {
 
   useEffect(() => {
     const checkWallet = async () => {
-      if (window.ethereum) {
+      const provider = window.ethereum;
+      if (provider && provider.isRabby) {
         try {
-          const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+          const accounts = await provider.request({ method: 'eth_accounts' });
           if (accounts.length > 0) {
             setAccount(accounts[0]);
           }
         } catch (error) {
-          console.log('No wallet connected');
+          console.log('No Rabby wallet connected');
         }
       }
     };
@@ -68,26 +69,34 @@ export default function CreateCertificate() {
   }, []);
 
   const connectWallet = async () => {
-    if (!window.ethereum) {
+    const provider = window.ethereum;
+    
+    if (!provider) {
       alert('Por favor instala Rabby Wallet para usar esta aplicación');
+      return;
+    }
+    
+    // VERIFICAR SI ES RABBY WALLET
+    if (!provider.isRabby) {
+      alert('⚠️ DETECTADO: MetaMask u otra wallet\n\nPor favor usa Rabby Wallet para mejor compatibilidad con Sonic\n\nRabby Wallet es gratuito y especializado para Web3');
       return;
     }
 
     setIsConnecting(true);
     try {
-      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+      const accounts = await provider.request({ method: 'eth_requestAccounts' });
       setAccount(accounts[0]);
       
-      const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+      const chainId = await provider.request({ method: 'eth_chainId' });
       if (chainId !== '0x3909') {
         try {
-          await window.ethereum.request({
+          await provider.request({
             method: 'wallet_switchEthereumChain',
             params: [{ chainId: '0x3909' }],
           });
         } catch (switchError) {
           if (switchError.code === 4902) {
-            await window.ethereum.request({
+            await provider.request({
               method: 'wallet_addEthereumChain',
               params: [sonicTestnetConfig],
             });
@@ -95,7 +104,10 @@ export default function CreateCertificate() {
         }
       }
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Error connecting wallet:', error);
+      if (error.code === 4001) {
+        alert('Conexión cancelada por el usuario');
+      }
     }
     setIsConnecting(false);
   };
@@ -123,7 +135,8 @@ export default function CreateCertificate() {
 
     try {
       const Web3 = (await import('web3')).default;
-      const web3 = new Web3(window.ethereum);
+      const provider = window.ethereum;
+      const web3 = new Web3(provider);
       const contract = new web3.eth.Contract(CONTRACT_ABI, CONTRACT_ADDRESS);
       
       const dateTimestamp = Math.floor(new Date(formData.date).getTime() / 1000);
@@ -164,9 +177,14 @@ export default function CreateCertificate() {
 
     } catch (error) {
       console.error('Error:', error);
+      let errorMessage = 'Error al crear certificado';
+      if (error.code === 4001) errorMessage = 'Transacción rechazada por el usuario';
+      if (error.message.includes('insufficient funds')) errorMessage = 'Fondos insuficientes para gas';
+      if (error.message.includes('already registered')) errorMessage = 'Este CID ya está registrado';
+      
       setTransactionStatus({
         success: false,
-        message: error.message.includes('rejected') ? 'Transacción rechazada' : 'Error al crear certificado'
+        message: errorMessage
       });
     }
 
@@ -174,12 +192,19 @@ export default function CreateCertificate() {
   };
 
   const isFormValid = () => {
-    return formData.fullName && formData.courseTitle && formData.date && formData.grade && formData.cid;
+    const dateObj = new Date(formData.date);
+    return formData.fullName && 
+           formData.courseTitle && 
+           formData.date && 
+           !isNaN(dateObj.getTime()) &&
+           formData.grade && 
+           formData.cid;
   };
 
   const formatDateForDisplay = (dateString) => {
     if (!dateString) return '';
     const date = new Date(dateString);
+    if (isNaN(date.getTime())) return 'Fecha inválida';
     return date.toLocaleDateString('es-ES', {
       day: '2-digit',
       month: '2-digit',
@@ -210,6 +235,7 @@ export default function CreateCertificate() {
                 <span className="account-address">
                   👤 {account.slice(0, 6)}...{account.slice(-4)}
                 </span>
+                <span className="wallet-badge">🦝 Rabby</span>
               </div>
               <p className="network-info">🌐 Sonic Testnet</p>
             </div>
@@ -221,14 +247,19 @@ export default function CreateCertificate() {
         {!account ? (
           <div className="not-connected">
             <div className="connection-prompt">
-              <h2>🔗 Conecta tu Wallet</h2>
-              <p>Para registrar certificados en Sonic, necesitas conectar Rabby Wallet</p>
+              <h2>🔗 Conecta Rabby Wallet</h2>
+              <p>Esta aplicación requiere Rabby Wallet para funcionar correctamente con Sonic</p>
               <button onClick={connectWallet} className="connect-btn large">
-                🔗 Conectar Rabby Wallet
+                🦝 Conectar Rabby Wallet
               </button>
-              <p className="wallet-hint">
-                Recomendado: <strong>Rabby Wallet</strong> para mejor compatibilidad con Sonic
-              </p>
+              <div className="wallet-requirements">
+                <p><strong>¿Por qué Rabby Wallet?</strong></p>
+                <ul>
+                  <li>✅ Compatibilidad total con Sonic Testnet</li>
+                  <li>✅ Interfaz optimizada para Web3</li>
+                  <li>✅ Mejor seguridad y experiencia de usuario</li>
+                </ul>
+              </div>
             </div>
           </div>
         ) : (
@@ -326,6 +357,7 @@ export default function CreateCertificate() {
             <div className="info-item"><strong>Blockchain:</strong> Sonic Testnet</div>
             <div className="info-item"><strong>ChainID:</strong> 14601</div>
             <div className="info-item"><strong>Estado:</strong> <span className={`status ${account ? 'connected' : 'disconnected'}`}>{account ? '✅ Conectado' : '🔌 Desconectado'}</span></div>
+            <div className="info-item"><strong>Wallet:</strong> Rabby Wallet 🦝</div>
           </div>
         </div>
       </main>
@@ -334,33 +366,34 @@ export default function CreateCertificate() {
         .container { max-width: 800px; margin: 0 auto; padding: 20px; font-family: -apple-system, sans-serif; min-height: 100vh; }
         header { text-align: center; margin-bottom: 40px; padding: 30px; background: linear-gradient(135deg, #2c5530 0%, #1e3a23 100%); color: white; border-radius: 15px; }
         h1 { margin-bottom: 10px; font-size: 2.5rem; }
-        .connect-btn { padding: 12px 24px; background: #f6851b; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; }
-        .connect-btn:hover:not(:disabled) { background: #e2761b; }
+        .connect-btn { padding: 12px 24px; background: #3B82F6; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; }
+        .connect-btn:hover:not(:disabled) { background: #2563EB; transform: translateY(-2px); }
         .connect-btn:disabled { opacity: 0.7; }
-        .connect-btn.large { padding: 15px 30px; font-size: 1.1rem; }
+        .connect-btn.large { padding: 15px 30px; font-size: 1.1rem; background: #8B5CF6; }
+        .wallet-badge { background: #8B5CF6; color: white; padding: 4px 8px; border-radius: 12px; font-size: 0.8rem; margin-left: 10px; }
         .wallet-info { background: rgba(255, 255, 255, 0.1); padding: 15px; border-radius: 10px; }
         .account-address { background: rgba(255, 255, 255, 0.2); padding: 8px 16px; border-radius: 20px; }
         .not-connected { background: white; padding: 40px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); text-align: center; }
+        .wallet-requirements { background: #F3F4F6; padding: 15px; border-radius: 10px; margin-top: 20px; text-align: left; }
+        .wallet-requirements ul { padding-left: 20px; margin: 10px 0; }
+        .wallet-requirements li { margin-bottom: 5px; }
         .form-container { background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); margin-bottom: 30px; }
         .form-group { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
         label { font-weight: 600; color: #2c5530; }
         input { padding: 12px 16px; border: 2px solid #e9ecef; border-radius: 8px; font-size: 16px; }
-        input:focus { outline: none; border-color: #2c5530; }
+        input:focus { outline: none; border-color: #2c5530; box-shadow: 0 0 0 3px rgba(44, 85, 48, 0.1); }
         input:disabled { background: #f8f9fa; }
         .submit-btn { padding: 15px 20px; background: linear-gradient(135deg, #2c5530 0%, #1e3a23 100%); color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; width: 100%; }
-        .submit-btn:hover:not(:disabled) { transform: translateY(-2px); }
+        .submit-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(44, 85, 48, 0.3); }
         .submit-btn:disabled { background: #6c757d; }
-        .transaction-result { margin-top: 30px; padding: 25px; border-radius: 12px; border-left: 5px solid; }
-        .transaction-result.success { background: #e8f5e9; border-color: #2c5530; }
-        .transaction-result.error { background: #ffebee; border-color: #d32f2f; }
+        .transaction-result { margin-top: 30px; padding: 25px; border-radius: 12px; border-left: 5px solid; animation: fadeIn 0.5s ease; }
+        .transaction-result.success { background: #e8f5e9; border-color: #2c5530; color: #1e3a23; }
+        .transaction-result.error { background: #ffebee; border-color: #d32f2f; color: #b71c1c; }
         .hash-container { display: flex; gap: 15px; margin-top: 10px; padding: 12px; background: #f8f9fa; border-radius: 8px; }
         .copy-btn { background: #2c5530; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; }
         .explorer-link { display: block; background: #2c5530; color: white; text-decoration: none; padding: 10px 20px; border-radius: 8px; text-align: center; margin-top: 10px; }
-        @media (max-width: 768px) {
-          .container { padding: 15px; }
-          header { padding: 20px; }
-          h1 { font-size: 2rem; }
-        }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @media (max-width: 768px) { .container { padding: 15px; } header { padding: 20px; } h1 { font-size: 2rem; } }
       `}</style>
     </div>
   );
