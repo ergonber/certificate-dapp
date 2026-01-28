@@ -658,11 +658,65 @@ export default function CreateCertificate() {
           boxShadow: '0 4px 15px rgba(0,0,0,0.1)',
           marginTop: '30px'
         }}>
-          <h3>🔧 Información Técnica</h3>
+         <h3>🔧 Información Técnica</h3>
           <div style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
             gap: '15px',
             marginTop: '15px'
           }}>
-            <div>
+            <div style={{
+              background: 'white',
+              padding: '12px',
+              borderRadius: '8px',
+              border: '1px solid #e9ecef'
+            }}>
+              <strong>Blockchain:</strong> Sonic Testnet
+            </div>
+            <div style={{
+              background: 'white',
+              padding: '12px',
+              borderRadius: '8px',
+              border: '1px solid #e9ecef'
+            }}>
+              <strong>ChainID:</strong> 14601
+            </div>
+            <div style={{
+              background: 'white',
+              padding: '12px',
+              borderRadius: '8px',
+              border: '1px solid #e9ecef'
+            }}>
+              <strong>Estado:</strong> 
+              <span style={{
+                padding: '4px 8px',
+                borderRadius: '4px',
+                fontSize: '0.9rem',
+                fontWeight: 'bold',
+                background: account ? '#d4edda' : '#f8d7da',
+                color: account ? '#155724' : '#721c24',
+                marginLeft: '5px'
+              }}>
+                {account ? '✅ Conectado' : '🔌 Desconectado'}
+              </span>
+            </div>
+            <div style={{
+              background: 'white',
+              padding: '12px',
+              borderRadius: '8px',
+              border: '1px solid #e9ecef'
+            }}>
+              <strong>Contrato:</strong> 
+              <code style={{
+                fontSize: '0.85rem',
+                marginLeft: '5px'
+              }}>
+                {CONTRACT_ADDRESS.slice(0, 10)}...{CONTRACT_ADDRESS.slice(-8)}
+              </code>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
