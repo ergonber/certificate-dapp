@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 
 export default function CreateCertificate() {
   const [formData, setFormData] = useState({
