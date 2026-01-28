@@ -67,13 +67,13 @@ export default function CreateCertificate() {
   const connectWallet = async () => {
     setWalletError('');
     
-    // SOLUCIÓN EXTREMA: Usar Rabby directamente si está disponible
-    let provider = window.rabby || window.ethereum;
-    
-    if (!provider) {
-      setWalletError('No se detectó ninguna wallet. Instala Rabby Wallet.');
-      return;
-    }
+     const provider = window.rabby;
+  
+  if (!provider) {
+    alert('🔴 ERROR: No se detectó Rabby Wallet\n\nSOLUCIÓN:\n1. Instala Rabby Wallet (rabby.io)\n2. DESACTIVA MetaMask temporalmente\n3. Recarga esta página');
+    window.open('https://rabby.io', '_blank');
+    return;
+  }
     
     // Verificar si es Rabby
     if (!provider.isRabby && !window.rabby) {
