@@ -16,7 +16,7 @@ export default function CreateCertificate() {
   const [certificateId, setCertificateId] = useState(null);
 
   // CONFIGURACIÓN SONIC - ¡ACTUALIZA ESTO CON TU DIRECCIÓN REAL!
-  const CONTRACT_ADDRESS = "0x8c9788968105bc28AB6489E8E85ABE3AA3573965"; // REEMPLAZAR CON DIRECCIÓN REAL
+  const CONTRACT_ADDRESS = "0xAe48Ed8cD53e6e595E857872b1ac338E17F08549"; // REEMPLAZAR CON DIRECCIÓN REAL
   const SONIC_RPC_URL = "https://rpc.testnet.soniclabs.com";
   const SONIC_CHAIN_ID = 14601;
 
