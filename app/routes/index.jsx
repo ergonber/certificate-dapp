@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { CONTRACT_ABI, CONTRACT_CONFIG, SONIC_TESTNET } from '~/utils/contracts';
+import { CONTRACT_ABI, CONTRACT_CONFIG, SONIC_TESTNET } from '../../utils/contracts';
 
 export default function CreateCertificate() {
   const [formData, setFormData] = useState({
