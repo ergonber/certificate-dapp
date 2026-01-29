@@ -43,3 +43,15 @@ export const CONTRACT_ABI = [
     "type": "function"
   }
 ];
+
+export const SONIC_TESTNET = {
+  chainId: '0x3909',
+  chainName: 'Sonic Testnet',
+  nativeCurrency: {
+    name: 'Sonic',
+    symbol: 'S',
+    decimals: 18,
+  },
+  rpcUrls: ['https://rpc.testnet.soniclabs.com'],
+  blockExplorerUrls: ['https://testnet.soniclabs.com'],
+};
