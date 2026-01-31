@@ -18,17 +18,14 @@ export default function CreateCertificate() {
   const [certificateCount, setCertificateCount] = useState(0);
   const [debugInfo, setDebugInfo] = useState('');
 
-  // Detectar wallet disponible (evita conflictos)
+  // Detectar wallet disponible
   useEffect(() => {
     const detectWallet = () => {
-      // Priorizar Rabby si existe
       if (window.rabby && window.rabby.ethereum) {
         console.log('✅ Detectado: Rabby Wallet');
         return window.rabby.ethereum;
-      } 
-      // Si no, usar ethereum global
-      else if (window.ethereum) {
-        console.log('⚠️ Detectado: Ethereum Provider (puede ser MetaMask)');
+      } else if (window.ethereum) {
+        console.log('⚠️ Detectado: Ethereum Provider');
         return window.ethereum;
       }
       console.log('❌ No se detectó wallet');
@@ -39,42 +36,39 @@ export default function CreateCertificate() {
     if (wallet) {
       setProvider(wallet);
       
-      // Verificar si ya hay cuenta conectada
       wallet.request({ method: 'eth_accounts' })
         .then(accounts => {
           if (accounts.length > 0) {
             setAccount(accounts[0]);
             checkNetwork(wallet);
+            fetchCertificateCount(accounts[0], wallet);
           }
         })
         .catch(console.error);
       
-      // Escuchar cambios de cuenta
       wallet.on('accountsChanged', (accounts) => {
         console.log('📝 Cuenta cambiada:', accounts);
         if (accounts.length > 0) {
           setAccount(accounts[0]);
+          fetchCertificateCount(accounts[0], wallet);
         } else {
           setAccount('');
+          setCertificateCount(0);
         }
       });
       
-      // Escuchar cambios de red
       wallet.on('chainChanged', () => {
-        console.log('🌐 Red cambiada, recargando...');
         window.location.reload();
       });
     }
   }, []);
 
-  // Verificar red correcta
+  // Verificar y cambiar a Sonic
   const checkNetwork = async (wallet) => {
     try {
       const chainId = await wallet.request({ method: 'eth_chainId' });
-      console.log('Chain ID actual:', chainId);
       
       if (chainId !== SONIC_TESTNET.chainId) {
-        console.log('⚠️ No estás en Sonic Testnet, cambiando...');
         await switchToSonicNetwork(wallet);
       }
     } catch (error) {
@@ -119,7 +113,6 @@ export default function CreateCertificate() {
     setDebugInfo('Conectando wallet...');
     
     try {
-      // Solicitar cuentas
       const accounts = await provider.request({ 
         method: 'eth_requestAccounts' 
       });
@@ -127,41 +120,38 @@ export default function CreateCertificate() {
       if (accounts && accounts.length > 0) {
         setAccount(accounts[0]);
         setDebugInfo(`Wallet conectada: ${accounts[0].slice(0, 10)}...`);
-        
-        // Verificar y cambiar a Sonic si es necesario
         await checkNetwork(provider);
+        fetchCertificateCount(accounts[0], provider);
       }
     } catch (error) {
       console.error('Error conectando wallet:', error);
-      setErrorDetails(`Error de conexión: ${error.message}`);
+      setErrorDetails(`Error: ${error.message}`);
       setDebugInfo(`Error: ${error.message}`);
     }
     setIsConnecting(false);
   };
 
   // Obtener contador de certificados
-  const fetchCertificateCount = async () => {
-    if (!account || !provider) return;
-    
+  const fetchCertificateCount = async (currentAccount, walletProvider) => {
     try {
       const Web3 = (await import('web3')).default;
-      const web3 = new Web3(provider);
+      const web3 = new Web3(walletProvider);
       const contract = new web3.eth.Contract(CONTRACT_ABI, CONTRACT_CONFIG.ADDRESS);
       
       const count = await contract.methods.certificateCount().call();
       setCertificateCount(parseInt(count));
-      console.log('📊 Certificados registrados:', count);
     } catch (error) {
       console.log('Error obteniendo contador:', error);
     }
   };
 
-  // Validar y formatear fecha
+  // Validar fecha - FIXED
   const validateAndFormatDate = (dateString) => {
     if (!dateString) return { valid: false, error: 'Fecha vacía' };
     
-    // Crear fecha en UTC
-    const dateObj = new Date(dateString + 'T00:00:00Z');
+    // Crear fecha en UTC - FORMATO CORRECTO
+    const [year, month, day] = dateString.split('-');
+    const dateObj = new Date(Date.UTC(year, month - 1, day));
     
     if (isNaN(dateObj.getTime())) {
       return { valid: false, error: 'Fecha inválida' };
@@ -174,14 +164,14 @@ export default function CreateCertificate() {
       return { valid: false, error: 'Fecha debe ser después de 1970' };
     }
     
-    if (timestamp > 4102444800) { // 2100-01-01
+    if (timestamp > 4102444800) {
       return { valid: false, error: 'Fecha no puede ser después de 2100' };
     }
     
     return { 
       valid: true, 
       timestamp: timestamp.toString(),
-      readable: dateObj.toLocaleDateString('es-ES')
+      readable: dateObj.toLocaleDateString('es-ES', { timeZone: 'UTC' })
     };
   };
 
@@ -189,7 +179,6 @@ export default function CreateCertificate() {
   const createCertificate = async (e) => {
     e.preventDefault();
     
-    // Resetear estados
     setLoading(true);
     setTransactionStatus(null);
     setErrorDetails('');
@@ -205,18 +194,13 @@ export default function CreateCertificate() {
         throw new Error('Por favor completa todos los campos');
       }
 
-      // Validar fecha
+      // Validar fecha CORRECTAMENTE
       const dateValidation = validateAndFormatDate(formData.date);
       if (!dateValidation.valid) {
         throw new Error(`Fecha inválida: ${dateValidation.error}`);
       }
 
-      // Validar CID (formato básico)
-      if (formData.cid.trim().length < 10) {
-        throw new Error('CID debe tener al menos 10 caracteres');
-      }
-
-      setDebugInfo('Validaciones pasadas ✓');
+      setDebugInfo(`Fecha convertida: ${dateValidation.timestamp} (${dateValidation.readable}) ✓`);
 
       // ===== PREPARAR DATOS =====
       const Web3 = await import('web3');
@@ -226,21 +210,21 @@ export default function CreateCertificate() {
       const params = [
         formData.fullName.trim(),
         formData.courseTitle.trim(),
-        dateValidation.timestamp, // Timestamp como string
+        dateValidation.timestamp,
         formData.grade.trim(),
         formData.cid.trim()
       ];
 
       console.log('📤 Enviando parámetros:', params);
-      setDebugInfo(`Parámetros preparados: ${JSON.stringify(params, null, 2)}`);
+      setDebugInfo(`Parámetros preparados: ${JSON.stringify(params)}`);
 
       // ===== SIMULAR TRANSACCIÓN =====
       setDebugInfo('Simulando transacción...');
       try {
-        await contract.methods.createCertificate(...params)
+        const simulation = await contract.methods.createCertificate(...params)
           .call({ from: account });
-        console.log('✅ Simulación exitosa');
-        setDebugInfo('Simulación exitosa ✓');
+        console.log('✅ Simulación exitosa:', simulation);
+        setDebugInfo(`Simulación exitosa: ID ${simulation} ✓`);
       } catch (simulationError) {
         console.error('❌ Error en simulación:', simulationError);
         throw new Error(`Error en simulación: ${simulationError.message}`);
@@ -248,23 +232,26 @@ export default function CreateCertificate() {
 
       // ===== ESTIMAR GAS =====
       setDebugInfo('Estimando gas...');
-      const gasEstimate = await contract.methods.createCertificate(...params)
-        .estimateGas({ from: account });
-      console.log('Gas estimado:', gasEstimate);
-      setDebugInfo(`Gas estimado: ${gasEstimate}`);
+      let gasEstimate;
+      try {
+        gasEstimate = await contract.methods.createCertificate(...params)
+          .estimateGas({ from: account });
+        console.log('Gas estimado:', gasEstimate);
+        setDebugInfo(`Gas estimado: ${gasEstimate}`);
+      } catch (gasError) {
+        console.error('Error estimando gas:', gasError);
+        gasEstimate = 300000; // Valor por defecto
+        setDebugInfo(`Usando gas por defecto: ${gasEstimate}`);
+      }
 
-      // ===== OBTENER GAS PRICE =====
-      const gasPrice = await web3.eth.getGasPrice();
-      console.log('Gas price:', gasPrice);
-      
       // ===== ENVIAR TRANSACCIÓN =====
       setDebugInfo('Enviando transacción...');
       const txResult = await contract.methods.createCertificate(...params)
         .send({
           from: account,
-          gas: Math.round(gasEstimate * 1.5).toString(), // 50% más por seguridad
-          gasPrice: gasPrice,
-          type: '0x0' // Tipo de transacción explícito
+          gas: Math.round(gasEstimate * 1.5).toString(),
+          maxPriorityFeePerGas: '2500000000', // 2.5 Gwei
+          maxFeePerGas: '3000000000', // 3 Gwei
         });
 
       console.log('✅ Transacción exitosa:', txResult);
@@ -278,11 +265,12 @@ export default function CreateCertificate() {
         explorerUrl: `${CONTRACT_CONFIG.EXPLORER_URL}/tx/${txResult.transactionHash}`,
         studentName: formData.fullName,
         courseName: formData.courseTitle,
-        date: dateValidation.readable
+        date: dateValidation.readable,
+        certificateId: txResult.events?.CertificateCreated?.returnValues?.id || 'N/A'
       });
 
       // Actualizar contador
-      fetchCertificateCount();
+      fetchCertificateCount(account, provider);
 
       // Limpiar formulario
       setFormData({
@@ -297,51 +285,32 @@ export default function CreateCertificate() {
       console.error('❌ Error completo:', error);
       setDebugInfo(`Error: ${error.message}`);
       
-      // ===== ANÁLISIS DETALLADO DEL ERROR =====
+      // ANÁLISIS DETALLADO DEL ERROR
       let errorMsg = 'Error al crear el certificado';
       let suggestion = '';
 
-      // Buscar errores específicos
       if (error.message.includes('User denied')) {
         errorMsg = '❌ Transacción cancelada por el usuario';
       } 
       else if (error.message.includes('insufficient funds') || error.message.includes('gas')) {
         errorMsg = '❌ Fondos insuficientes para gas';
-        suggestion = `Necesitas tokens S (Sonic) para pagar el gas.
-        
-💡 Obtén tokens de prueba en:
-https://faucet.testnet.soniclabs.com
-
-💰 Saldo mínimo recomendado: 0.2 S`;
+        suggestion = `💡 Obtén tokens de prueba en:\nhttps://faucet.testnet.soniclabs.com`;
       }
       else if (error.message.includes('revert') || error.message.includes('reverted')) {
         errorMsg = '❌ Transacción revertida por el contrato';
-        suggestion = `El contrato rechazó la transacción.
-
-🔍 Posibles causas:
-1. CID duplicado (ya existe)
-2. Fecha inválida en el contrato
-3. Límite de caracteres excedido
-4. Restricción del contrato
-
-🛠️ Soluciones:
-• Usa un CID diferente: test-${Date.now()}
-• Verifica que el contrato esté correcto
-• Contacta al administrador del contrato`;
         
-        // Mostrar más detalles si están disponibles
-        if (error.data) {
-          console.log('Datos del revert:', error.data);
-          suggestion += `\n\n📄 Datos técnicos: ${error.data}`;
+        // Análisis específico de revert
+        if (error.message.includes('CID')) {
+          suggestion = 'Este CID ya está registrado. Usa un CID diferente.';
+        } else if (error.message.includes('fecha')) {
+          suggestion = 'La fecha es inválida. Asegúrate que sea una fecha válida.';
+        } else {
+          suggestion = `Posibles causas:\n1. Datos inválidos\n2. CID duplicado\n3. Límites del contrato`;
         }
       }
-      else if (error.message.includes('nonce')) {
-        errorMsg = '❌ Error de nonce';
-        suggestion = 'Recarga la página y prueba de nuevo';
-      }
-      else if (error.message.includes('underpriced')) {
-        errorMsg = '❌ Gas price muy bajo';
-        suggestion = 'La transacción necesita más gas price';
+      else if (error.message.includes('Missing or invalid parameters')) {
+        errorMsg = '❌ Parámetros inválidos';
+        suggestion = 'Verifica que todos los campos estén correctamente completados. El problema puede estar en la fecha.';
       }
       else {
         errorMsg = `❌ ${error.message}`;
@@ -363,21 +332,21 @@ https://faucet.testnet.soniclabs.com
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  // Generar CID aleatorio para pruebas
+  // Generar CID aleatorio
   const generateRandomCID = () => {
     const randomCID = 'test-cid-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
     setFormData(prev => ({ ...prev, cid: randomCID }));
     setDebugInfo(`CID generado: ${randomCID}`);
   };
 
-  // Probar con datos de prueba
+  // Probar con datos de prueba CORREGIDOS
   const testWithSampleData = () => {
     const sampleData = {
       fullName: 'María García López',
       courseTitle: 'Desarrollo Web3 Avanzado',
-      date: '2024-01-15',
+      date: '2024-01-15', // FORMATO YYYY-MM-DD
       grade: '95/100 (Excelente)',
-      cid: 'test-' + Date.now() + '-sonic'
+      cid: 'test-cid-' + Date.now() + '-sonic'
     };
     
     setFormData(sampleData);
@@ -387,8 +356,8 @@ https://faucet.testnet.soniclabs.com
   // Formatear fecha para display
   const formatDateForDisplay = (dateString) => {
     if (!dateString) return '';
-    const date = new Date(dateString + 'T00:00:00Z');
-    return isNaN(date.getTime()) ? '' : date.toLocaleDateString('es-ES');
+    const dateValidation = validateAndFormatDate(dateString);
+    return dateValidation.valid ? dateValidation.readable : 'Fecha inválida';
   };
 
   // Copiar al portapapeles
@@ -418,12 +387,9 @@ https://faucet.testnet.soniclabs.com
     window.open('https://faucet.testnet.soniclabs.com', '_blank');
   };
 
-  useEffect(() => {
-    if (account) {
-      fetchCertificateCount();
-    }
-  }, [account]);
-
+  // Render simplificado del resto de la UI...
+  // (El código de renderizado que ya tienes está bien)
+  
   return (
     <div style={{
       maxWidth: '800px',
@@ -522,24 +488,6 @@ https://faucet.testnet.soniclabs.com
           <div style={{ padding: '8px', background: 'white', borderRadius: '6px' }}>
             <strong>Certificados:</strong> {certificateCount} registrados
           </div>
-          <div style={{ padding: '8px', background: 'white', borderRadius: '6px' }}>
-            <strong>Contrato:</strong> 
-            <button 
-              onClick={verifyContract}
-              style={{
-                marginLeft: '8px',
-                padding: '4px 8px',
-                background: '#0d6efd',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                fontSize: '0.8rem',
-                cursor: 'pointer'
-              }}
-            >
-              Verificar
-            </button>
-          </div>
         </div>
         
         {debugInfo && (
@@ -627,7 +575,7 @@ https://faucet.testnet.soniclabs.com
               />
             </div>
 
-            {/* Fecha */}
+            {/* Fecha - CORREGIDO */}
             <div style={{ display: 'flex', flexDirection: 'column' }}>
               <label htmlFor="date" style={{
                 fontWeight: 600,
@@ -740,9 +688,6 @@ https://faucet.testnet.soniclabs.com
                   🎲 Generar CID
                 </button>
               </div>
-              <small style={{ marginTop: '5px', color: '#6c757d', fontSize: '0.85rem' }}>
-                Sube tu documento a IPFS o Arweave y pega el CID aquí
-              </small>
             </div>
 
             {/* BOTONES DE ACCIÓN */}
@@ -809,9 +754,7 @@ https://faucet.testnet.soniclabs.com
               borderRadius: '12px',
               borderLeft: '5px solid',
               background: transactionStatus.success ? '#e8f5e9' : '#ffebee',
-              borderColor: transactionStatus.success ? '#2c5530' : '#d32f2f',
-              color: transactionStatus.success ? '#1e3a23' : '#b71c1c',
-              animation: 'fadeIn 0.5s ease'
+              borderColor: transactionStatus.success ? '#2c5530' : '#d32f2f'
             }}>
               <div style={{ marginBottom: '15px' }}>
                 <h3 style={{ margin: '0 0 10px 0', fontSize: '1.5rem' }}>
@@ -822,126 +765,24 @@ https://faucet.testnet.soniclabs.com
               
               {transactionStatus.success ? (
                 <div>
-                  <div style={{
-                    background: 'rgba(44, 85, 48, 0.1)',
-                    padding: '15px',
-                    borderRadius: '8px',
-                    marginBottom: '20px'
-                  }}>
-                    <p>🎉 ¡Felicidades! Tu certificado ahora es inmutable en la blockchain de Sonic.</p>
-                    <p>🔗 <strong>Guarda este hash para verificar:</strong></p>
-                  </div>
-                  
-                  <div style={{
-                    background: 'white',
-                    padding: '20px',
-                    borderRadius: '10px',
-                    border: '2px solid #e0e0e0',
-                    margin: '20px 0'
-                  }}>
-                    <div style={{ marginBottom: '15px' }}>
-                      <strong>🔗 Hash de Transacción (Sonic):</strong>
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '15px',
-                        marginTop: '10px',
-                        padding: '12px',
-                        background: '#f8f9fa',
-                        borderRadius: '8px',
-                        border: '1px solid #e9ecef'
-                      }}>
-                        <code style={{
-                          fontFamily: "'Courier New', monospace",
-                          fontSize: '0.9rem',
-                          color: '#2c5530',
-                          wordBreak: 'break-all',
-                          flex: 1
-                        }}>
-                          {transactionStatus.transactionHash}
-                        </code>
-                        <button 
-                          onClick={() => copyToClipboard(transactionStatus.transactionHash)}
-                          style={{
-                            background: '#2c5530',
-                            color: 'white',
-                            border: 'none',
-                            padding: '8px 16px',
-                            borderRadius: '6px',
-                            cursor: 'pointer',
-                            fontWeight: 'bold',
-                            whiteSpace: 'nowrap'
-                          }}
-                        >
-                          📋 Copiar
-                        </button>
-                      </div>
-                    </div>
-                    
-                    <a 
-                      href={transactionStatus.explorerUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{
-                        display: 'inline-block',
-                        background: '#2c5530',
-                        color: 'white',
-                        textDecoration: 'none',
-                        fontWeight: 'bold',
-                        padding: '10px 20px',
-                        borderRadius: '8px',
-                        transition: 'all 0.3s',
-                        textAlign: 'center',
-                        width: '100%',
-                        marginTop: '10px'
-                      }}
-                    >
-                      🔍 Ver en Sonic Explorer →
-                    </a>
-                  </div>
-                  
-                  <div style={{
-                    background: '#f8f9fa',
-                    padding: '20px',
-                    borderRadius: '10px',
-                    margin: '20px 0'
-                  }}>
-                    <h4 style={{ marginTop: 0, color: '#2c5530' }}>📋 Información del Certificado</h4>
-                    <div style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                      gap: '15px',
-                      marginTop: '15px'
-                    }}>
-                      <div style={{
-                        background: 'white',
-                        padding: '12px',
-                        borderRadius: '8px',
-                        border: '1px solid #e9ecef'
-                      }}>
-                        <strong>👤 Estudiante:</strong>
-                        <div>{transactionStatus.studentName}</div>
-                      </div>
-                      <div style={{
-                        background: 'white',
-                        padding: '12px',
-                        borderRadius: '8px',
-                        border: '1px solid #e9ecef'
-                      }}>
-                        <strong>📚 Curso:</strong>
-                        <div>{transactionStatus.courseName}</div>
-                      </div>
-                      <div style={{
-                        background: 'white',
-                        padding: '12px',
-                        borderRadius: '8px',
-                        border: '1px solid #e9ecef'
-                      }}>
-                        <strong>📅 Fecha:</strong>
-                        <div>{transactionStatus.date}</div>
-                      </div>
-                    </div>
-                  </div>
+                  <p>🎉 ¡Felicidades! Tu certificado ahora es inmutable en la blockchain de Sonic.</p>
+                  <a 
+                    href={transactionStatus.explorerUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      display: 'inline-block',
+                      background: '#2c5530',
+                      color: 'white',
+                      textDecoration: 'none',
+                      fontWeight: 'bold',
+                      padding: '10px 20px',
+                      borderRadius: '8px',
+                      marginTop: '10px'
+                    }}
+                  >
+                    🔍 Ver en Sonic Explorer →
+                  </a>
                 </div>
               ) : (
                 <div>
@@ -951,44 +792,24 @@ https://faucet.testnet.soniclabs.com
                       padding: '15px',
                       borderRadius: '8px',
                       marginTop: '15px',
-                      whiteSpace: 'pre-line',
-                      fontFamily: 'monospace',
-                      fontSize: '0.9rem'
+                      whiteSpace: 'pre-line'
                     }}>
-                      <strong>💡 Sugerencias y Soluciones:</strong>
+                      <strong>💡 Solución:</strong>
                       <div style={{ marginTop: '10px' }}>{errorDetails}</div>
-                      
-                      <div style={{ marginTop: '15px', paddingTop: '15px', borderTop: '1px solid #ffc107' }}>
-                        <strong>🛠️ Acciones recomendadas:</strong>
-                        <div style={{ marginTop: '10px', display: 'flex', gap: '10px' }}>
-                          <button 
-                            onClick={getTestTokens}
-                            style={{
-                              padding: '8px 16px',
-                              background: '#198754',
-                              color: 'white',
-                              border: 'none',
-                              borderRadius: '6px',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            💰 Obtener Tokens
-                          </button>
-                          <button 
-                            onClick={verifyContract}
-                            style={{
-                              padding: '8px 16px',
-                              background: '#0d6efd',
-                              color: 'white',
-                              border: 'none',
-                              borderRadius: '6px',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            📄 Ver Contrato
-                          </button>
-                        </div>
-                      </div>
+                      <button 
+                        onClick={getTestTokens}
+                        style={{
+                          marginTop: '10px',
+                          padding: '8px 16px',
+                          background: '#198754',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '6px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        💰 Obtener Tokens de Prueba
+                      </button>
                     </div>
                   )}
                 </div>
@@ -1023,86 +844,13 @@ https://faucet.testnet.soniclabs.com
             >
               {provider ? '🔗 Conectar Wallet' : 'Instalar Wallet Primero'}
             </button>
-            <p style={{ marginTop: '15px', fontSize: '0.9rem', opacity: 0.8 }}>
-              Recomendado: <strong>Rabby Wallet</strong> para mejor compatibilidad con Sonic
-            </p>
           </div>
         </div>
       )}
 
-      {/* INFORMACIÓN TÉCNICA */}
-      <div style={{
-        background: 'white',
-        padding: '25px',
-        borderRadius: '15px',
-        boxShadow: '0 4px 15px rgba(0,0,0,0.1)',
-        marginTop: '30px'
-      }}>
-        <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>🔧 Información Técnica</h3>
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-          gap: '15px',
-          marginTop: '15px'
-        }}>
-          <div style={{
-            background: 'white',
-            padding: '12px',
-            borderRadius: '8px',
-            border: '1px solid #e9ecef'
-          }}>
-            <strong>Blockchain:</strong> Sonic Testnet
-          </div>
-          <div style={{
-            background: 'white',
-            padding: '12px',
-            borderRadius: '8px',
-            border: '1px solid #e9ecef'
-          }}>
-            <strong>ChainID:</strong> 14601 (0x3909)
-          </div>
-          <div style={{
-            background: 'white',
-            padding: '12px',
-            borderRadius: '8px',
-            border: '1px solid #e9ecef'
-          }}>
-            <strong>Estado:</strong> 
-            <span style={{
-              padding: '4px 8px',
-              borderRadius: '4px',
-              fontSize: '0.9rem',
-              fontWeight: 'bold',
-              background: account ? '#d4edda' : '#f8d7da',
-              color: account ? '#155724' : '#721c24',
-              marginLeft: '5px'
-            }}>
-              {account ? '✅ Conectado' : '🔌 Desconectado'}
-            </span>
-          </div>
-          <div style={{
-            background: 'white',
-            padding: '12px',
-            borderRadius: '8px',
-            border: '1px solid #e9ecef'
-          }}>
-            <strong>Contrato:</strong> 
-            <code style={{
-              fontSize: '0.85rem',
-              marginLeft: '5px',
-              fontFamily: 'monospace'
-            }}>
-              {CONTRACT_CONFIG.ADDRESS.slice(0, 10)}...{CONTRACT_CONFIG.ADDRESS.slice(-8)}
-            </code>
-          </div>
-        </div>
-      </div>
-
-      {/* ESTILOS ADICIONALES */}
       <style>{`
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(-10px); }
-          to { opacity: 1; transform: translateY(0); }
+        @keyframes spin {
+          to { transform: rotate(360deg); }
         }
         
         .spinner {
@@ -1113,15 +861,6 @@ https://faucet.testnet.soniclabs.com
           border-radius: 50%;
           border-top-color: transparent;
           animation: spin 1s linear infinite;
-        }
-        
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-        
-        input:disabled {
-          background-color: #f8f9fa;
-          cursor: not-allowed;
         }
       `}</style>
     </div>
