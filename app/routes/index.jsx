@@ -12,144 +12,117 @@ export default function CreateCertificate() {
   const [loading, setLoading] = useState(false);
   const [transactionStatus, setTransactionStatus] = useState(null);
   const [account, setAccount] = useState('');
-  const [isConnecting, setIsConnecting] = useState(false);
   const [errorDetails, setErrorDetails] = useState('');
-  const [provider, setProvider] = useState(null);
   const [certificateCount, setCertificateCount] = useState(0);
-  const [debugInfo, setDebugInfo] = useState('');
 
-  // Detectar wallet disponible
+  // Detectar MetaMask
   useEffect(() => {
-    const detectWallet = () => {
-      if (window.rabby && window.rabby.ethereum) {
-        console.log('✅ Detectado: Rabby Wallet');
-        return window.rabby.ethereum;
-      } else if (window.ethereum) {
-        console.log('⚠️ Detectado: Ethereum Provider');
-        return window.ethereum;
-      }
-      console.log('❌ No se detectó wallet');
-      return null;
-    };
-
-    const wallet = detectWallet();
-    if (wallet) {
-      setProvider(wallet);
+    if (window.ethereum) {
+      console.log('✅ MetaMask detectado');
       
-      wallet.request({ method: 'eth_accounts' })
+      window.ethereum.request({ method: 'eth_accounts' })
         .then(accounts => {
           if (accounts.length > 0) {
             setAccount(accounts[0]);
-            checkNetwork(wallet);
-            fetchCertificateCount(accounts[0], wallet);
+            checkNetwork();
+            fetchCertificateCount();
           }
         })
         .catch(console.error);
       
-      wallet.on('accountsChanged', (accounts) => {
-        console.log('📝 Cuenta cambiada:', accounts);
+      window.ethereum.on('accountsChanged', (accounts) => {
         if (accounts.length > 0) {
           setAccount(accounts[0]);
-          fetchCertificateCount(accounts[0], wallet);
+          fetchCertificateCount();
         } else {
           setAccount('');
-          setCertificateCount(0);
         }
       });
       
-      wallet.on('chainChanged', () => {
+      window.ethereum.on('chainChanged', () => {
         window.location.reload();
       });
     }
   }, []);
 
   // Verificar y cambiar a Sonic
-  const checkNetwork = async (wallet) => {
+  const checkNetwork = async () => {
     try {
-      const chainId = await wallet.request({ method: 'eth_chainId' });
+      const chainId = await window.ethereum.request({ method: 'eth_chainId' });
       
       if (chainId !== SONIC_TESTNET.chainId) {
-        await switchToSonicNetwork(wallet);
+        await switchToSonicNetwork();
       }
     } catch (error) {
       console.error('Error verificando red:', error);
     }
   };
 
-  // Cambiar a red Sonic
-  const switchToSonicNetwork = async (wallet) => {
+  // Cambiar a Sonic
+  const switchToSonicNetwork = async () => {
     try {
-      await wallet.request({
+      await window.ethereum.request({
         method: 'wallet_switchEthereumChain',
         params: [{ chainId: SONIC_TESTNET.chainId }],
       });
-      console.log('✅ Cambiado a Sonic Testnet');
     } catch (switchError) {
       if (switchError.code === 4902) {
         try {
-          await wallet.request({
+          await window.ethereum.request({
             method: 'wallet_addEthereumChain',
             params: [SONIC_TESTNET],
           });
-          console.log('✅ Red Sonic agregada');
         } catch (addError) {
           console.error('Error agregando red:', addError);
         }
-      } else {
-        console.error('Error cambiando red:', switchError);
       }
     }
   };
 
-  // Conectar wallet
+  // Conectar MetaMask
   const connectWallet = async () => {
-    if (!provider) {
-      alert('Por favor instala Rabby Wallet desde rabby.io');
-      window.open('https://rabby.io', '_blank');
+    if (!window.ethereum) {
+      alert('Por favor instala MetaMask');
+      window.open('https://metamask.io', '_blank');
       return;
     }
 
-    setIsConnecting(true);
-    setDebugInfo('Conectando wallet...');
-    
     try {
-      const accounts = await provider.request({ 
+      const accounts = await window.ethereum.request({ 
         method: 'eth_requestAccounts' 
       });
       
       if (accounts && accounts.length > 0) {
         setAccount(accounts[0]);
-        setDebugInfo(`Wallet conectada: ${accounts[0].slice(0, 10)}...`);
-        await checkNetwork(provider);
-        fetchCertificateCount(accounts[0], provider);
+        await checkNetwork();
+        fetchCertificateCount();
       }
     } catch (error) {
       console.error('Error conectando wallet:', error);
       setErrorDetails(`Error: ${error.message}`);
-      setDebugInfo(`Error: ${error.message}`);
     }
-    setIsConnecting(false);
   };
 
-  // Obtener contador de certificados
-  const fetchCertificateCount = async (currentAccount, walletProvider) => {
+  // Obtener contador con ethers
+  const fetchCertificateCount = async () => {
+    if (!account || !window.ethereum) return;
+    
     try {
-      const Web3 = (await import('web3')).default;
-      const web3 = new Web3(walletProvider);
-      const contract = new web3.eth.Contract(CONTRACT_ABI, CONTRACT_CONFIG.ADDRESS);
+      const { ethers } = await import('ethers');
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const contract = new ethers.Contract(CONTRACT_CONFIG.ADDRESS, CONTRACT_ABI, provider);
       
-      const count = await contract.methods.certificateCount().call();
-      setCertificateCount(parseInt(count));
+      const count = await contract.certificateCount();
+      setCertificateCount(Number(count));
     } catch (error) {
       console.log('Error obteniendo contador:', error);
     }
   };
 
-  // Validar fecha - FIXED
+  // Validar fecha
   const validateAndFormatDate = (dateString) => {
     if (!dateString) return { valid: false, error: 'Fecha vacía' };
     
-    // Crear fecha en UTC - FORMATO CORRECTO
     const [year, month, day] = dateString.split('-');
     const dateObj = new Date(Date.UTC(year, month - 1, day));
     
@@ -159,7 +132,6 @@ export default function CreateCertificate() {
     
     const timestamp = Math.floor(dateObj.getTime() / 1000);
     
-    // Validaciones
     if (timestamp <= 0) {
       return { valid: false, error: 'Fecha debe ser después de 1970' };
     }
@@ -175,37 +147,33 @@ export default function CreateCertificate() {
     };
   };
 
-  // Crear certificado - VERSIÓN CORREGIDA
+  // Crear certificado con ethers
   const createCertificate = async (e) => {
     e.preventDefault();
     
     setLoading(true);
     setTransactionStatus(null);
     setErrorDetails('');
-    setDebugInfo('Iniciando registro...');
 
     try {
-      // ===== VALIDACIONES =====
       if (!account) {
-        throw new Error('Por favor conecta tu wallet primero');
+        throw new Error('Por favor conecta MetaMask primero');
       }
 
       if (!formData.fullName || !formData.courseTitle || !formData.date || !formData.grade || !formData.cid) {
         throw new Error('Por favor completa todos los campos');
       }
 
-      // Validar fecha CORRECTAMENTE
       const dateValidation = validateAndFormatDate(formData.date);
       if (!dateValidation.valid) {
         throw new Error(`Fecha inválida: ${dateValidation.error}`);
       }
 
-      setDebugInfo(`Fecha convertida: ${dateValidation.timestamp} (${dateValidation.readable}) ✓`);
-
-      // ===== PREPARAR DATOS =====
-      const Web3 = await import('web3');
-      const web3 = new Web3.default(provider);
-      const contract = new web3.eth.Contract(CONTRACT_ABI, CONTRACT_CONFIG.ADDRESS);
+      // Usar ethers.js
+      const { ethers } = await import('ethers');
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const contract = new ethers.Contract(CONTRACT_CONFIG.ADDRESS, CONTRACT_ABI, signer);
 
       const params = [
         formData.fullName.trim(),
@@ -215,159 +183,80 @@ export default function CreateCertificate() {
         formData.cid.trim()
       ];
 
-      console.log('📤 Enviando parámetros:', params);
-      setDebugInfo(`Parámetros preparados: ${JSON.stringify(params)}`);
-
-      // ===== SIMULAR TRANSACCIÓN =====
-      setDebugInfo('Simulando transacción...');
-      try {
-        const simulation = await contract.methods.createCertificate(...params)
-          .call({ from: account });
-        console.log('✅ Simulación exitosa:', simulation);
-        setDebugInfo(`Simulación exitosa: ID ${simulation} ✓`);
-      } catch (simulationError) {
-        console.error('❌ Error en simulación:', simulationError);
-        throw new Error(`Error en simulación: ${simulationError.message}`);
-      }
-
-      // ===== ESTIMAR GAS =====
-      setDebugInfo('Estimando gas...');
-      let gasEstimate;
-      try {
-        gasEstimate = await contract.methods.createCertificate(...params)
-          .estimateGas({ from: account });
-        console.log('Gas estimado:', gasEstimate);
-        setDebugInfo(`Gas estimado: ${gasEstimate}`);
-      } catch (gasError) {
-        console.error('Error estimando gas:', gasError);
-        gasEstimate = 300000; // Valor por defecto
-        setDebugInfo(`Usando gas por defecto: ${gasEstimate}`);
-      }
-
-      // ===== ENVIAR TRANSACCIÓN =====
-      setDebugInfo('Enviando transacción...');
-      const txResult = await contract.methods.createCertificate(...params)
-        .send({
-          from: account,
-          gas: Math.round(gasEstimate * 1.5).toString(),
-          maxPriorityFeePerGas: '2500000000', // 2.5 Gwei
-          maxFeePerGas: '3000000000', // 3 Gwei
-        });
-
-      console.log('✅ Transacción exitosa:', txResult);
-      setDebugInfo('Transacción minada ✓');
-
-      // ===== ÉXITO =====
+      // Enviar transacción
+      const tx = await contract.createCertificate(...params);
+      
       setTransactionStatus({
         success: true,
-        message: '✅ ¡Certificado registrado exitosamente en Sonic Blockchain!',
-        transactionHash: txResult.transactionHash,
-        explorerUrl: `${CONTRACT_CONFIG.EXPLORER_URL}/tx/${txResult.transactionHash}`,
-        studentName: formData.fullName,
-        courseName: formData.courseTitle,
-        date: dateValidation.readable,
-        certificateId: txResult.events?.CertificateCreated?.returnValues?.id || 'N/A'
+        message: '⏳ Transacción enviada, esperando confirmación...',
+        transactionHash: tx.hash
       });
 
-      // Actualizar contador
-      fetchCertificateCount(account, provider);
-
-      // Limpiar formulario
-      setFormData({
-        fullName: '',
-        courseTitle: '',
-        date: '',
-        grade: '',
-        cid: ''
+      // Esperar confirmación
+      const receipt = await tx.wait();
+      
+      setTransactionStatus({
+        success: true,
+        message: '✅ ¡Certificado registrado exitosamente en Sonic!',
+        transactionHash: receipt.hash,
+        explorerUrl: `${CONTRACT_CONFIG.EXPLORER_URL}/tx/${receipt.hash}`,
+        studentName: formData.fullName
       });
+
+      // Actualizar contador y limpiar
+      fetchCertificateCount();
+      setFormData({ fullName: '', courseTitle: '', date: '', grade: '', cid: '' });
 
     } catch (error) {
-      console.error('❌ Error completo:', error);
-      setDebugInfo(`Error: ${error.message}`);
+      console.error('Error:', error);
       
-      // ANÁLISIS DETALLADO DEL ERROR
       let errorMsg = 'Error al crear el certificado';
-      let suggestion = '';
-
-      if (error.message.includes('User denied')) {
-        errorMsg = '❌ Transacción cancelada por el usuario';
+      
+      if (error.message.includes('user rejected')) {
+        errorMsg = '❌ Transacción rechazada por el usuario';
       } 
-      else if (error.message.includes('insufficient funds') || error.message.includes('gas')) {
+      else if (error.message.includes('insufficient funds')) {
         errorMsg = '❌ Fondos insuficientes para gas';
-        suggestion = `💡 Obtén tokens de prueba en:\nhttps://faucet.testnet.soniclabs.com`;
+        setErrorDetails('💡 Obtén tokens S en: https://faucet.testnet.soniclabs.com');
       }
-      else if (error.message.includes('revert') || error.message.includes('reverted')) {
-        errorMsg = '❌ Transacción revertida por el contrato';
-        
-        // Análisis específico de revert
-        if (error.message.includes('CID')) {
-          suggestion = 'Este CID ya está registrado. Usa un CID diferente.';
-        } else if (error.message.includes('fecha')) {
-          suggestion = 'La fecha es inválida. Asegúrate que sea una fecha válida.';
-        } else {
-          suggestion = `Posibles causas:\n1. Datos inválidos\n2. CID duplicado\n3. Límites del contrato`;
-        }
-      }
-      else if (error.message.includes('Missing or invalid parameters')) {
-        errorMsg = '❌ Parámetros inválidos';
-        suggestion = 'Verifica que todos los campos estén correctamente completados. El problema puede estar en la fecha.';
+      else if (error.message.includes('revert')) {
+        errorMsg = '❌ Transacción revertida (CID duplicado o datos inválidos)';
       }
       else {
         errorMsg = `❌ ${error.message}`;
       }
 
-      setErrorDetails(suggestion);
-      setTransactionStatus({
-        success: false,
-        message: errorMsg
-      });
+      setTransactionStatus({ success: false, message: errorMsg });
     }
 
     setLoading(false);
   };
 
-  // Handler para inputs
+  // Handlers
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  // Generar CID aleatorio
   const generateRandomCID = () => {
     const randomCID = 'test-cid-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
     setFormData(prev => ({ ...prev, cid: randomCID }));
-    setDebugInfo(`CID generado: ${randomCID}`);
   };
 
-  // Probar con datos de prueba CORREGIDOS
   const testWithSampleData = () => {
-    const sampleData = {
+    setFormData({
       fullName: 'María García López',
-      courseTitle: 'Desarrollo Web3 Avanzado',
-      date: '2024-01-15', // FORMATO YYYY-MM-DD
+      courseTitle: 'Desarrollo Web3',
+      date: '2024-01-15',
       grade: '95/100 (Excelente)',
       cid: 'test-cid-' + Date.now() + '-sonic'
-    };
-    
-    setFormData(sampleData);
-    setDebugInfo('Datos de prueba cargados ✓');
-  };
-
-  // Formatear fecha para display
-  const formatDateForDisplay = (dateString) => {
-    if (!dateString) return '';
-    const dateValidation = validateAndFormatDate(dateString);
-    return dateValidation.valid ? dateValidation.readable : 'Fecha inválida';
-  };
-
-  // Copiar al portapapeles
-  const copyToClipboard = (text) => {
-    navigator.clipboard.writeText(text).then(() => {
-      alert('¡Copiado al portapapeles!');
     });
   };
 
-  // Verificar si el formulario es válido
+  const getTestTokens = () => {
+    window.open('https://faucet.testnet.soniclabs.com', '_blank');
+  };
+
   const isFormValid = () => {
     return formData.fullName && 
            formData.courseTitle && 
@@ -377,26 +266,12 @@ export default function CreateCertificate() {
            validateAndFormatDate(formData.date).valid;
   };
 
-  // Verificar contrato en explorer
-  const verifyContract = () => {
-    window.open(`${CONTRACT_CONFIG.EXPLORER_URL}/address/${CONTRACT_CONFIG.ADDRESS}`, '_blank');
-  };
-
-  // Obtener faucet
-  const getTestTokens = () => {
-    window.open('https://faucet.testnet.soniclabs.com', '_blank');
-  };
-
-  // Render simplificado del resto de la UI...
-  // (El código de renderizado que ya tienes está bien)
-  
   return (
     <div style={{
       maxWidth: '800px',
       margin: '0 auto',
       padding: '20px',
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-      minHeight: '100vh'
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
     }}>
       {/* HEADER */}
       <header style={{
@@ -405,104 +280,44 @@ export default function CreateCertificate() {
         padding: '30px',
         background: 'linear-gradient(135deg, #2c5530 0%, #1e3a23 100%)',
         color: 'white',
-        borderRadius: '15px',
-        boxShadow: '0 4px 20px rgba(44, 85, 48, 0.3)'
+        borderRadius: '15px'
       }}>
         <h1 style={{ marginBottom: '10px', fontSize: '2.5rem' }}>🎓 Registro de Certificados en Sonic</h1>
-        <p style={{ opacity: 0.9 }}>Crea certificados inmutables en la blockchain de Sonic Testnet</p>
+        <p style={{ opacity: 0.9 }}>Usando MetaMask en Sonic Testnet</p>
         
         <div style={{ marginTop: '20px' }}>
           {!account ? (
             <button 
               onClick={connectWallet}
-              disabled={isConnecting || !provider}
               style={{
                 padding: '12px 24px',
-                background: provider ? '#f6851b' : '#6c757d',
+                background: '#f6851b',
                 color: 'white',
                 border: 'none',
                 borderRadius: '8px',
                 fontWeight: 'bold',
-                cursor: provider ? 'pointer' : 'not-allowed',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '8px',
+                cursor: 'pointer',
                 fontSize: '1.1rem'
               }}
             >
-              {!provider ? 'Instalar Wallet' : 
-               isConnecting ? 'Conectando...' : '🔗 Conectar Wallet'}
+              🦊 Conectar MetaMask
             </button>
           ) : (
             <div style={{
               background: 'rgba(255, 255, 255, 0.1)',
               padding: '15px',
-              borderRadius: '10px',
-              backdropFilter: 'blur(10px)'
+              borderRadius: '10px'
             }}>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '10px',
-                marginBottom: '5px'
-              }}>
-                <span style={{
-                  background: 'rgba(255, 255, 255, 0.2)',
-                  padding: '8px 16px',
-                  borderRadius: '20px',
-                  fontWeight: 'bold'
-                }}>
-                  👤 {account.slice(0, 6)}...{account.slice(-4)}
-                </span>
+              <div style={{ fontWeight: 'bold' }}>
+                👤 {account.slice(0, 6)}...{account.slice(-4)}
               </div>
-              <p style={{ fontSize: '0.9rem', opacity: 0.8 }}>🌐 Sonic Testnet ✅</p>
+              <div style={{ fontSize: '0.9rem', opacity: 0.8 }}>
+                🌐 Sonic Testnet • Certificados: {certificateCount}
+              </div>
             </div>
           )}
         </div>
       </header>
-
-      {/* PANEL DE DIAGNÓSTICO */}
-      <div style={{
-        background: '#e8f4fd',
-        padding: '15px',
-        borderRadius: '10px',
-        marginBottom: '20px',
-        border: '1px solid #b6d4fe'
-      }}>
-        <h4 style={{ marginTop: 0, color: '#084298', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          🔧 Panel de Diagnóstico
-        </h4>
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-          gap: '10px',
-          marginTop: '10px'
-        }}>
-          <div style={{ padding: '8px', background: 'white', borderRadius: '6px' }}>
-            <strong>Wallet:</strong> {provider ? '✅ Detectado' : '❌ No detectado'}
-          </div>
-          <div style={{ padding: '8px', background: 'white', borderRadius: '6px' }}>
-            <strong>Conexión:</strong> {account ? `✅ ${account.slice(0, 10)}...` : '❌ Desconectado'}
-          </div>
-          <div style={{ padding: '8px', background: 'white', borderRadius: '6px' }}>
-            <strong>Certificados:</strong> {certificateCount} registrados
-          </div>
-        </div>
-        
-        {debugInfo && (
-          <div style={{
-            marginTop: '10px',
-            padding: '10px',
-            background: '#fff3cd',
-            borderRadius: '6px',
-            border: '1px solid #ffc107',
-            fontSize: '0.9rem'
-          }}>
-            <strong>📝 Log:</strong> {debugInfo}
-          </div>
-        )}
-      </div>
 
       {/* FORMULARIO */}
       {account ? (
@@ -515,21 +330,12 @@ export default function CreateCertificate() {
         }}>
           <form onSubmit={createCertificate} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             
-            {/* Nombre */}
             <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <label htmlFor="fullName" style={{
-                fontWeight: 600,
-                marginBottom: '8px',
-                color: '#2c5530',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}>
+              <label style={{ fontWeight: 600, marginBottom: '8px', color: '#2c5530' }}>
                 👤 Nombre Completo *
               </label>
               <input
                 type="text"
-                id="fullName"
                 name="fullName"
                 value={formData.fullName}
                 onChange={handleInputChange}
@@ -545,21 +351,12 @@ export default function CreateCertificate() {
               />
             </div>
 
-            {/* Curso */}
             <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <label htmlFor="courseTitle" style={{
-                fontWeight: 600,
-                marginBottom: '8px',
-                color: '#2c5530',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}>
+              <label style={{ fontWeight: 600, marginBottom: '8px', color: '#2c5530' }}>
                 📚 Curso o Título *
               </label>
               <input
                 type="text"
-                id="courseTitle"
                 name="courseTitle"
                 value={formData.courseTitle}
                 onChange={handleInputChange}
@@ -575,28 +372,17 @@ export default function CreateCertificate() {
               />
             </div>
 
-            {/* Fecha - CORREGIDO */}
             <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <label htmlFor="date" style={{
-                fontWeight: 600,
-                marginBottom: '8px',
-                color: '#2c5530',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}>
-                📅 Fecha del Certificado *
+              <label style={{ fontWeight: 600, marginBottom: '8px', color: '#2c5530' }}>
+                📅 Fecha *
               </label>
               <input
                 type="date"
-                id="date"
                 name="date"
                 value={formData.date}
                 onChange={handleInputChange}
                 required
                 disabled={loading}
-                min="2020-01-01"
-                max="2099-12-31"
                 style={{
                   padding: '12px 16px',
                   border: '2px solid #e9ecef',
@@ -604,28 +390,14 @@ export default function CreateCertificate() {
                   fontSize: '16px'
                 }}
               />
-              {formData.date && (
-                <small style={{ marginTop: '5px', color: '#2c5530', fontSize: '0.9rem', fontWeight: 500 }}>
-                  📅 Se registrará como: {formatDateForDisplay(formData.date)} (Timestamp: {validateAndFormatDate(formData.date).timestamp || 'inválido'})
-                </small>
-              )}
             </div>
 
-            {/* Nota */}
             <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <label htmlFor="grade" style={{
-                fontWeight: 600,
-                marginBottom: '8px',
-                color: '#2c5530',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}>
-                ⭐ Nota o Calificación *
+              <label style={{ fontWeight: 600, marginBottom: '8px', color: '#2c5530' }}>
+                ⭐ Nota *
               </label>
               <input
                 type="text"
-                id="grade"
                 name="grade"
                 value={formData.grade}
                 onChange={handleInputChange}
@@ -641,22 +413,13 @@ export default function CreateCertificate() {
               />
             </div>
 
-            {/* CID */}
             <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <label htmlFor="cid" style={{
-                fontWeight: 600,
-                marginBottom: '8px',
-                color: '#2c5530',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}>
-                🔗 CID del Título (IPFS/Arweave) *
+              <label style={{ fontWeight: 600, marginBottom: '8px', color: '#2c5530' }}>
+                🔗 CID *
               </label>
               <div style={{ display: 'flex', gap: '10px' }}>
                 <input
                   type="text"
-                  id="cid"
                   name="cid"
                   value={formData.cid}
                   onChange={handleInputChange}
@@ -681,16 +444,14 @@ export default function CreateCertificate() {
                     color: 'white',
                     border: 'none',
                     borderRadius: '8px',
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap'
+                    cursor: 'pointer'
                   }}
                 >
-                  🎲 Generar CID
+                  🎲 Generar
                 </button>
               </div>
             </div>
 
-            {/* BOTONES DE ACCIÓN */}
             <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
               <button 
                 type="submit"
@@ -704,21 +465,11 @@ export default function CreateCertificate() {
                   fontSize: '16px',
                   fontWeight: 'bold',
                   cursor: (loading || !isFormValid()) ? 'not-allowed' : 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '10px',
                   flex: 1,
                   opacity: (loading || !isFormValid()) ? 0.7 : 1
                 }}
               >
-                {loading ? (
-                  <>
-                    <span className="spinner"></span> Registrando en Sonic...
-                  </>
-                ) : (
-                  '🚀 Registrar en Blockchain'
-                )}
+                {loading ? '⏳ Registrando...' : '🚀 Registrar en Sonic'}
               </button>
               
               <button 
@@ -731,87 +482,65 @@ export default function CreateCertificate() {
                   color: 'white',
                   border: 'none',
                   borderRadius: '8px',
-                  fontSize: '16px',
-                  fontWeight: 'bold',
-                  cursor: loading ? 'not-allowed' : 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '10px',
-                  whiteSpace: 'nowrap'
+                  cursor: 'pointer'
                 }}
               >
-                🧪 Probar Datos
+                🧪 Probar
               </button>
             </div>
           </form>
 
-          {/* PANEL DE RESULTADOS */}
+          {/* RESULTADOS */}
           {transactionStatus && (
             <div style={{
               marginTop: '30px',
-              padding: '25px',
+              padding: '20px',
               borderRadius: '12px',
               borderLeft: '5px solid',
               background: transactionStatus.success ? '#e8f5e9' : '#ffebee',
               borderColor: transactionStatus.success ? '#2c5530' : '#d32f2f'
             }}>
-              <div style={{ marginBottom: '15px' }}>
-                <h3 style={{ margin: '0 0 10px 0', fontSize: '1.5rem' }}>
-                  {transactionStatus.success ? '✅ ¡Certificado Registrado!' : '❌ Error'}
-                </h3>
-                <p>{transactionStatus.message}</p>
-              </div>
+              <p style={{ margin: '0 0 10px 0', fontWeight: 'bold' }}>
+                {transactionStatus.success ? '✅ Éxito' : '❌ Error'}
+              </p>
+              <p>{transactionStatus.message}</p>
               
-              {transactionStatus.success ? (
-                <div>
-                  <p>🎉 ¡Felicidades! Tu certificado ahora es inmutable en la blockchain de Sonic.</p>
-                  <a 
-                    href={transactionStatus.explorerUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
+              {transactionStatus.success && transactionStatus.explorerUrl && (
+                <a 
+                  href={transactionStatus.explorerUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    display: 'inline-block',
+                    background: '#2c5530',
+                    color: 'white',
+                    textDecoration: 'none',
+                    padding: '8px 16px',
+                    borderRadius: '6px',
+                    marginTop: '10px'
+                  }}
+                >
+                  🔍 Ver en Explorer
+                </a>
+              )}
+              
+              {errorDetails && (
+                <div style={{ marginTop: '15px' }}>
+                  <p>{errorDetails}</p>
+                  <button 
+                    onClick={getTestTokens}
                     style={{
-                      display: 'inline-block',
-                      background: '#2c5530',
+                      padding: '8px 16px',
+                      background: '#198754',
                       color: 'white',
-                      textDecoration: 'none',
-                      fontWeight: 'bold',
-                      padding: '10px 20px',
-                      borderRadius: '8px',
+                      border: 'none',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
                       marginTop: '10px'
                     }}
                   >
-                    🔍 Ver en Sonic Explorer →
-                  </a>
-                </div>
-              ) : (
-                <div>
-                  {errorDetails && (
-                    <div style={{
-                      background: '#fff3cd',
-                      padding: '15px',
-                      borderRadius: '8px',
-                      marginTop: '15px',
-                      whiteSpace: 'pre-line'
-                    }}>
-                      <strong>💡 Solución:</strong>
-                      <div style={{ marginTop: '10px' }}>{errorDetails}</div>
-                      <button 
-                        onClick={getTestTokens}
-                        style={{
-                          marginTop: '10px',
-                          padding: '8px 16px',
-                          background: '#198754',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '6px',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        💰 Obtener Tokens de Prueba
-                      </button>
-                    </div>
-                  )}
+                    💰 Obtener Tokens
+                  </button>
                 </div>
               )}
             </div>
@@ -825,44 +554,42 @@ export default function CreateCertificate() {
           boxShadow: '0 4px 15px rgba(0,0,0,0.1)',
           textAlign: 'center'
         }}>
-          <div style={{ textAlign: 'center' }}>
-            <h2>🔗 Conecta tu Wallet</h2>
-            <p>Para registrar certificados en Sonic, necesitas conectar tu wallet</p>
-            <button 
-              onClick={connectWallet}
-              disabled={!provider}
-              style={{
-                padding: '15px 30px',
-                background: provider ? '#f6851b' : '#6c757d',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                fontSize: '1.1rem',
-                marginTop: '20px',
-                cursor: provider ? 'pointer' : 'not-allowed'
-              }}
-            >
-              {provider ? '🔗 Conectar Wallet' : 'Instalar Wallet Primero'}
-            </button>
-          </div>
+          <h2>🦊 Conecta MetaMask</h2>
+          <p>Para registrar certificados en Sonic Testnet</p>
+          <button 
+            onClick={connectWallet}
+            style={{
+              padding: '15px 30px',
+              background: '#f6851b',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '1.1rem',
+              marginTop: '20px',
+              cursor: 'pointer'
+            }}
+          >
+            Conectar MetaMask
+          </button>
+          <p style={{ marginTop: '15px', fontSize: '0.9rem', opacity: 0.8 }}>
+            Asegúrate de estar en <strong>Sonic Testnet (ChainID: 14601)</strong>
+          </p>
         </div>
       )}
 
-      <style>{`
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-        
-        .spinner {
-          display: inline-block;
-          width: 16px;
-          height: 16px;
-          border: 2px solid #ffffff;
-          border-radius: 50%;
-          border-top-color: transparent;
-          animation: spin 1s linear infinite;
-        }
-      `}</style>
+      {/* INFORMACIÓN */}
+      <div style={{
+        background: 'white',
+        padding: '20px',
+        borderRadius: '15px',
+        boxShadow: '0 4px 15px rgba(0,0,0,0.1)'
+      }}>
+        <p style={{ margin: 0, textAlign: 'center' }}>
+          <strong>Contrato:</strong> {CONTRACT_CONFIG.ADDRESS.slice(0, 10)}...{CONTRACT_CONFIG.ADDRESS.slice(-8)} • 
+          <strong> Red:</strong> Sonic Testnet • 
+          <strong> Tokens:</strong> <button onClick={getTestTokens} style={{ background: 'none', border: 'none', color: '#0d6efd', cursor: 'pointer' }}>Obtener S</button>
+        </p>
+      </div>
     </div>
   );
 }
